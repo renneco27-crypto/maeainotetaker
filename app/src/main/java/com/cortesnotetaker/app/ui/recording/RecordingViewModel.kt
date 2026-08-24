@@ -55,7 +55,14 @@ class RecordingViewModel(
         transcriptCollectionJob = viewModelScope.launch {
             RecordingService.transcriptSharedFlow.collect { segment ->
                 _uiState.update { current ->
-                    current.copy(liveTranscriptSegments = current.liveTranscriptSegments + segment)
+                    val exists = current.liveTranscriptSegments.any {
+                        it.startMs == segment.startMs && it.text == segment.text
+                    }
+                    if (!exists) {
+                        current.copy(liveTranscriptSegments = current.liveTranscriptSegments + segment)
+                    } else {
+                        current
+                    }
                 }
             }
         }

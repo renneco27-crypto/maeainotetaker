@@ -115,29 +115,39 @@ class RecordingService : Service() {
             
             updateNotification("Recording...", subject)
             
-            // VAD processing loop
-            for (pcmFrame in audioCapture.pcmFlow) {
-                if (!isPaused) {
-                    val speechSegment = vadDetector.processPcmFrame(pcmFrame)
-                    speechSegment?.let { segment ->
-                        val startOffset = maxOf(0L, segment.startMs - recordingStartTime)
-                        val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
-                        
-                        // Transcribe
-                        val result = whisperEngine.transcribe(segment.pcmData, "auto")
-                        result?.let { whisperResult ->
-                            if (whisperResult.text.isNotBlank()) {
-                                val transcriptSegment = TranscriptSegment(
-                                    noteId = currentNoteId,
-                                    startMs = startOffset,
-                                    endMs = endOffset,
-                                    text = whisperResult.text.trim(),
-                                    isUnclear = whisperResult.text == "[unclear]",
-                                    confidenceScore = whisperResult.avgLogProb,
-                                    timestamp = System.currentTimeMillis()
-                                )
-                                transcriptSharedFlow.emit(transcriptSegment)
-                            }
+            val speechQueue = kotlinx.coroutines.channels.Channel<com.cortesnotetaker.app.vad.SileroVadDetector.SpeechSegment>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+
+            // Worker 1: Real-time Audio Ingestion & VAD (non-blocking)
+            launch(Dispatchers.Default) {
+                for (pcmFrame in audioCapture.pcmFlow) {
+                    if (!isPaused) {
+                        val speechSegment = vadDetector.processPcmFrame(pcmFrame)
+                        speechSegment?.let { segment ->
+                            speechQueue.send(segment)
+                        }
+                    }
+                }
+            }
+
+            // Worker 2: Asynchronous Whisper Transcriber
+            launch(Dispatchers.Default) {
+                for (segment in speechQueue) {
+                    val startOffset = maxOf(0L, segment.startMs - recordingStartTime)
+                    val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
+                    
+                    val result = whisperEngine.transcribe(segment.pcmData, "auto")
+                    result?.let { whisperResult ->
+                        if (whisperResult.text.isNotBlank()) {
+                            val transcriptSegment = TranscriptSegment(
+                                noteId = currentNoteId,
+                                startMs = startOffset,
+                                endMs = endOffset,
+                                text = whisperResult.text.trim(),
+                                isUnclear = whisperResult.text == "[unclear]",
+                                confidenceScore = whisperResult.avgLogProb,
+                                timestamp = System.currentTimeMillis()
+                            )
+                            transcriptSharedFlow.emit(transcriptSegment)
                         }
                     }
                 }
@@ -247,7 +257,7 @@ class RecordingService : Service() {
     }
 
     companion object {
-        val transcriptSharedFlow = MutableSharedFlow<TranscriptSegment>(replay = 50, extraBufferCapacity = 100)
+        val transcriptSharedFlow = MutableSharedFlow<TranscriptSegment>(replay = 0, extraBufferCapacity = 100)
 
         const val ACTION_START = "com.cortesnotetaker.app.START_RECORDING"
         const val ACTION_PAUSE = "com.cortesnotetaker.app.PAUSE_RECORDING"
