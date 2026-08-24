@@ -1,6 +1,7 @@
 package com.cortesnotetaker.app.ui.recording
 
 import android.content.Intent
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cortesnotetaker.app.data.db.entity.NoteEntity
