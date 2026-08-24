@@ -70,18 +70,23 @@ class WhisperEngine {
         }
     }
 
-    suspend fun transcribe(pcmData: ShortArray, language: String = "auto"): WhisperResult? {
+    suspend fun transcribe(pcmData: ShortArray, language: String = "en"): WhisperResult? {
         return withContext(dispatcher) {
             if (!isInitialized || nativeContext == 0L) {
-                Log.e("WhisperEngine", "Whisper not initialized")
+                Log.e("WhisperEngine", "Whisper not initialized (isInit=$isInitialized, ptr=$nativeContext)")
                 return@withContext null
             }
             
+            Log.d("WhisperEngine", "Calling nativeTranscribe with ${pcmData.size} samples, language=$language")
             val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
+            val startTime = System.currentTimeMillis()
             val result = nativeTranscribe(nativeContext, floatData, language)
+            val elapsed = System.currentTimeMillis() - startTime
             
             if (result != null) {
-                Log.d("WhisperEngine", "Transcribed text: '${result.text}', logprob: ${result.avgLogProb}")
+                Log.d("WhisperEngine", "Transcribed in ${elapsed}ms -> '${result.text}', logprob: ${result.avgLogProb}")
+            } else {
+                Log.w("WhisperEngine", "nativeTranscribe returned null after ${elapsed}ms")
             }
             
             result
