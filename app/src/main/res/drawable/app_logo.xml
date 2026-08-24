@@ -1,0 +1,103 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Circle with Gradient -->
+    <path
+        android:pathData="M54,6 C27.5,6 6,27.5 6,54 C6,80.5 27.5,102 54,102 C80.5,102 102,80.5 102,54 C102,27.5 80.5,6 54,6 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="0"
+                android:startY="0"
+                android:endX="108"
+                android:endY="108"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#0D47A1" />
+                <item android:offset="0.5" android:color="#1565C0" />
+                <item android:offset="1.0" android:color="#00838F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    
+    <!-- Open Student Notebook / Document Base in Background -->
+    <path
+        android:pathData="M34,44 L74,44 C76.2,44 78,45.8 78,48 L78,76 C78,78.2 76.2,80 74,80 L34,80 C31.8,80 30,78.2 30,76 L30,48 C30,45.8 31.8,44 34,44 Z"
+        android:fillColor="#E0F2FE" />
+        
+    <!-- Notebook spine / accent stripe -->
+    <path
+        android:pathData="M30,48 L36,48 L36,76 L30,76 Z"
+        android:fillColor="#38BDF8" />
+        
+    <!-- Notebook text lines (transcription rows) -->
+    <path
+        android:pathData="M42,54 L70,54 M42,62 L66,62 M42,70 L58,70"
+        android:strokeWidth="2.5"
+        android:strokeColor="#94A3B8"
+        android:strokeLineCap="round" />
+
+    <!-- Audio Waveform / Pulsing Live Speech Bars -->
+    <path
+        android:pathData="M24,54 L24,66"
+        android:strokeWidth="3"
+        android:strokeColor="#38BDF8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M84,54 L84,66"
+        android:strokeWidth="3"
+        android:strokeColor="#38BDF8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M20,58 L20,62"
+        android:strokeWidth="2.5"
+        android:strokeColor="#7DD3FC"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M88,58 L88,62"
+        android:strokeWidth="2.5"
+        android:strokeColor="#7DD3FC"
+        android:strokeLineCap="round" />
+
+    <!-- Front Prominent Studio Microphone -->
+    <!-- Mic capsule shadow -->
+    <path
+        android:pathData="M54,26 C49.5,26 46,29.5 46,34 L46,48 C46,52.5 49.5,56 54,56 C58.5,56 62,52.5 62,48 L62,34 C62,29.5 58.5,26 54,26 Z"
+        android:fillColor="#0284C7" />
+        
+    <!-- Mic capsule inner highlight -->
+    <path
+        android:pathData="M54,28 C51,28 48.5,30.5 48.5,33.5 L48.5,46.5 C48.5,49.5 51,52 54,52 C57,52 59.5,49.5 59.5,46.5 L59.5,33.5 C59.5,30.5 57,28 54,28 Z"
+        android:fillColor="#F0F9FF" />
+
+    <!-- Mic grille horizontal slits -->
+    <path
+        android:pathData="M51,34 L57,34 M50,38 L58,38 M51,42 L57,42"
+        android:strokeWidth="1.5"
+        android:strokeColor="#0284C7"
+        android:strokeLineCap="round" />
+
+    <!-- Mic U-shaped suspension bracket -->
+    <path
+        android:pathData="M42,42 C42,55 66,55 66,42"
+        android:strokeWidth="3.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+
+    <!-- Mic stand stem -->
+    <path
+        android:pathData="M54,55 L54,64"
+        android:strokeWidth="3.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+
+    <!-- Mic base stand -->
+    <path
+        android:pathData="M46,64 L62,64"
+        android:strokeWidth="3.5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round" />
+
+</vector>

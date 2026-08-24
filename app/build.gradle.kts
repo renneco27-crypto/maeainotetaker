@@ -24,9 +24,19 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val ksFile = file("../keystore/release.keystore")
+            storeFile = if (ksFile.exists()) ksFile else file("keystore/release.keystore")
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "02272007Law"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "lawrencecortes"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "02272007Law"
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -36,15 +46,6 @@ android {
         debug {
             isMinifyEnabled = false
             isDebuggable = true
-        }
-    }
-
-    signingConfigs {
-        create("release") {
-            storeFile = file("../keystore/release.keystore")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
         }
     }
 
@@ -67,7 +68,7 @@ android {
         viewBinding = false
     }
 
-    packagingOptions {
+    packaging {
         resources {
             excludes += listOf(
                 "META-INF/DEPENDENCIES",
@@ -92,7 +93,7 @@ android {
         }
     }
 
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "27.1.12297006"
 }
 
 dependencies {
@@ -160,10 +161,4 @@ dependencies {
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.tooling.preview)
-}
-
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-    kotlinOptions {
-        freeCompilerArgs += listOf("-Xopt-in=kotlin.RequiresOptIn")
-    }
 }
