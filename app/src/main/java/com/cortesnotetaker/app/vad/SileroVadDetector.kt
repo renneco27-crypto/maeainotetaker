@@ -1,22 +1,23 @@
 package com.cortesnotetaker.app.vad
 
 import android.content.Context
-import android.content.res.AssetManager
 import android.util.Log
 import com.microsoft.onnxruntime.OnnxTensor
 import com.microsoft.onnxruntime.OrtEnvironment
 import com.microsoft.onnxruntime.OrtSession
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
+import java.io.File
+import java.nio.FloatBuffer
+import java.nio.LongBuffer
 
 class SileroVadDetector(private val context: Context) {
     private var ortEnvironment: OrtEnvironment? = null
     private var ortSession: OrtSession? = null
     
-    // Silero VAD state
-    private var hState: FloatArray = FloatArray(2 * 1 * 128) // 2 layers * batch * hidden_size
-    private var cState: FloatArray = FloatArray(2 * 1 * 128)
-    private var srState: FloatArray = floatArrayOf(16000f) // Sample rate
+    // Silero VAD state (2 layers * 1 batch * 128 hidden)
+    private var state: FloatArray = FloatArray(2 * 1 * 128)
+    private val sampleRate: Long = 16000L
     
     private var accumulatedSpeechFrames: MutableList<Short> = mutableListOf()
     private var accumulatedSpeechStartMs: Long = 0
@@ -40,9 +41,10 @@ class SileroVadDetector(private val context: Context) {
         try {
             ortEnvironment = OrtEnvironment.getEnvironment()
             val modelPath = copyModelFromAssets()
-            val sessionOptions = OrtSession.SessionOptions()
-            sessionOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            ortSession = ortEnvironment!!.createSession(modelPath, sessionOptions)
+            val sessionOptions = OrtSession.SessionOptions().apply {
+                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            }
+            ortSession = ortEnvironment?.createSession(modelPath, sessionOptions)
             Log.d("SileroVAD", "Model loaded from: $modelPath")
         } catch (e: Exception) {
             Log.e("SileroVAD", "Failed to initialize model", e)
@@ -51,15 +53,15 @@ class SileroVadDetector(private val context: Context) {
 
     private fun copyModelFromAssets(): String {
         val modelFile = File(context.filesDir, "silero_vad.onnx")
-        if (modelFile.exists()) {
+        if (modelFile.exists() && modelFile.length() > 0) {
             return modelFile.absolutePath
         }
         
-        val inputStream = context.assets.open("silero_vad.onnx")
-        val outputStream = java.io.FileOutputStream(modelFile)
-        inputStream.copyTo(outputStream)
-        inputStream.close()
-        outputStream.close()
+        context.assets.open("silero_vad.onnx").use { input ->
+            modelFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        }
         return modelFile.absolutePath
     }
 
@@ -67,11 +69,10 @@ class SileroVadDetector(private val context: Context) {
         if (ortSession == null) return null
         
         // Convert ShortArray to FloatArray (normalized to -1.0 to 1.0)
-        val floatFrame = pcmFrame.map { it.toFloat() / 32768f }.toFloatArray()
+        val floatFrame = FloatArray(pcmFrame.size) { i -> pcmFrame[i] / 32768f }
         
         // Silero expects 512 samples (32ms at 16kHz)
         if (floatFrame.size != 512) {
-            // Pad or trim if needed
             return processPaddedFrame(floatFrame, pcmFrame)
         }
         
@@ -89,40 +90,54 @@ class SileroVadDetector(private val context: Context) {
     }
 
     private fun runInference(frame: FloatArray, pcmFrame: ShortArray): SpeechSegment? {
-        try {
-            // Create input tensors
-            val inputTensor = OnnxTensor.createTensor(ortEnvironment!!, arrayOf(frame))
-            val hTensor = OnnxTensor.createTensor(ortEnvironment!!, arrayOf(hState.reshape(2, 1, 128)))
-            val cTensor = OnnxTensor.createTensor(ortEnvironment!!, arrayOf(cState.reshape(2, 1, 128)))
-            val srTensor = OnnxTensor.createTensor(ortEnvironment!!, arrayOf(srState))
+        val env = ortEnvironment ?: return null
+        val session = ortSession ?: return null
+        
+        var inputTensor: OnnxTensor? = null
+        var stateTensor: OnnxTensor? = null
+        var srTensor: OnnxTensor? = null
+        var outputs: OrtSession.Result? = null
 
-            val inputNames = arrayOf("input", "h", "c", "sr")
+        try {
+            val inputBuffer = FloatBuffer.wrap(frame)
+            inputTensor = OnnxTensor.createTensor(env, inputBuffer, longArrayOf(1, 512))
+
+            val stateBuffer = FloatBuffer.wrap(state)
+            stateTensor = OnnxTensor.createTensor(env, stateBuffer, longArrayOf(2, 1, 128))
+
+            val srBuffer = LongBuffer.wrap(longArrayOf(sampleRate))
+            srTensor = OnnxTensor.createTensor(env, srBuffer, longArrayOf(1))
+
             val inputs = mapOf(
-                inputNames[0] to inputTensor,
-                inputNames[1] to hTensor,
-                inputNames[2] to cTensor,
-                inputNames[3] to srTensor
+                "input" to inputTensor,
+                "state" to stateTensor,
+                "sr" to srTensor
             )
 
-            val outputs = ortSession!!.run(inputs)
+            outputs = session.run(inputs)
             
-            // Get output: [speech_prob, new_h, new_c]
-            val speechProb = (outputs[0] as OnnxTensor).getValue() as Array<FloatArray>
-            val newH = (outputs[1] as OnnxTensor).getValue() as Array<FloatArray>
-            val newC = (outputs[2] as OnnxTensor).getValue() as Array<FloatArray>
+            val outputTensor = outputs.get(0) as? OnnxTensor
+            val newStateTensor = outputs.get(1) as? OnnxTensor
+
+            val speechProb = if (outputTensor != null) {
+                val floatBuffer = outputTensor.floatBuffer
+                floatBuffer.get(0)
+            } else 0f
+
+            if (newStateTensor != null) {
+                val stateBuf = newStateTensor.floatBuffer
+                stateBuf.get(state)
+            }
             
-            val prob = speechProb[0][0]
-            
-            // Update states
-            hState = newH[0].flatten()
-            cState = newC[0].flatten()
-            
-            // Process speech probability with hysteresis
-            return processSpeechProbability(prob, pcmFrame)
-            
+            return processSpeechProbability(speechProb, pcmFrame)
         } catch (e: Exception) {
             Log.e("SileroVAD", "Inference error", e)
             return null
+        } finally {
+            inputTensor?.close()
+            stateTensor?.close()
+            srTensor?.close()
+            outputs?.close()
         }
     }
 

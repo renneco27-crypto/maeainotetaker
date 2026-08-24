@@ -25,6 +25,7 @@ target_link_libraries(whisper_jni PRIVATE whisper android log)
 target_include_directories(whisper_jni PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp/ggml/include
 )
 
 # ARM NEON optimizations for mid-range phones

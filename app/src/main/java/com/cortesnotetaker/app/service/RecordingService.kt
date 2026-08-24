@@ -28,10 +28,14 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
+import android.content.pm.ServiceInfo
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+
 class RecordingService : Service() {
     private val binder = LocalBinder()
-    private var job: Job? = null
-    private var coroutineScope: CoroutineScope? = null
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var pipelineJob: Job? = null
     
     // Components
     private lateinit var audioCapture: AudioCaptureManager
@@ -79,40 +83,44 @@ class RecordingService : Service() {
     }
 
     private fun handleStartRecording(intent: Intent?) {
-        if (job != null && job!!.isActive) return
+        if (pipelineJob != null && pipelineJob?.isActive == true) return
         
         currentNoteId = intent?.getLongExtra(EXTRA_NOTE_ID, 0) ?: 0
         val subject = intent?.getStringExtra(EXTRA_SUBJECT) ?: ""
         
         currentAudioPath = MediaRecorderManager.getDefaultRecordingPath(this)
         
-        val audioStarted = audioCapture.start()
-        val recorderStarted = mediaRecorder.start(currentAudioPath)
-        val whisperInitialized = whisperEngine.initialize(this).await()
-        
-        if (!audioStarted || !recorderStarted || !whisperInitialized) {
-            Log.e("RecordingService", "Failed to start recording components")
-            stopSelf()
-            return
+        // Start foreground immediately to satisfy Android background start requirements
+        val notification = buildNotification("Starting recording...", subject)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
         }
-        
-        recordingStartTime = System.currentTimeMillis()
-        pausedTime = 0
-        isPaused = false
-        
-        // Start foreground service
-        val notification = buildNotification("Recording...", subject)
-        startForeground(NOTIFICATION_ID, notification, Build.VERSION.SDK_INT >= 34 
-            && ForegroundServiceType.MICROPHONE != 0)
-        
-        // Start processing pipeline
-        startPipeline()
-    }
 
-    private fun startPipeline() {
-        job = CoroutineScope(Dispatchers.IO).launch {
+        pipelineJob = serviceScope.launch {
+            val whisperInitialized = whisperEngine.initialize(this@RecordingService)
+            val audioStarted = audioCapture.start()
+            val recorderStarted = mediaRecorder.start(currentAudioPath)
+            
+            if (!audioStarted || !recorderStarted || !whisperInitialized) {
+                Log.e("RecordingService", "Failed to start recording components")
+                stopSelf()
+                return@launch
+            }
+            
+            recordingStartTime = System.currentTimeMillis()
+            pausedTime = 0
+            isPaused = false
+            
+            updateNotification("Recording...", subject)
+            
             // VAD processing loop
-            audioCapture.pcmFlow.consumeEach { pcmFrame ->
+            for (pcmFrame in audioCapture.pcmFlow) {
                 if (!isPaused) {
                     val speechSegment = vadDetector.processFrame(pcmFrame)
                     speechSegment?.let { segment ->
@@ -156,7 +164,7 @@ class RecordingService : Service() {
     }
 
     private fun handleStop() {
-        job?.cancel()
+        pipelineJob?.cancel()
         audioCapture.stop()
         mediaRecorder.stop()
         vadDetector.reset()
@@ -226,7 +234,8 @@ class RecordingService : Service() {
     }
 
     override fun onDestroy() {
-        job?.cancel()
+        pipelineJob?.cancel()
+        serviceScope.cancel()
         audioCapture.stop()
         mediaRecorder.stop()
         vadDetector.release()
