@@ -123,7 +123,7 @@ class RecordingService : Service() {
             // VAD processing loop
             for (pcmFrame in audioCapture.pcmFlow) {
                 if (!isPaused) {
-                    val speechSegment = vadDetector.processFrame(pcmFrame)
+                    val speechSegment = vadDetector.processPcmFrame(pcmFrame)
                     speechSegment?.let { segment ->
                         // Transcribe
                         val result = whisperEngine.transcribe(segment.pcmData, "auto")
