@@ -80,8 +80,8 @@ class WhisperEngine {
             val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
             val result = nativeTranscribe(nativeContext, floatData, language)
             
-            if (result != null && result.avgLogProb < -1.0f) {
-                result.text = if (result.text.isNotBlank()) "[unclear]" else ""
+            if (result != null) {
+                Log.d("WhisperEngine", "Transcribed text: '${result.text}', logprob: ${result.avgLogProb}")
             }
             
             result

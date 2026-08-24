@@ -25,11 +25,11 @@ class SileroVadDetector(private val context: Context) {
     private var isInSpeech = false
     
     // Thresholds for hysteresis
-    private val SPEECH_THRESHOLD = 0.45f
-    private val SILENCE_THRESHOLD = 0.25f
-    private val SILENCE_HANGOVER_MS = 600L // 600ms silence before concluding speech segment
+    private val SPEECH_THRESHOLD = 0.35f
+    private val SILENCE_THRESHOLD = 0.15f
+    private val SILENCE_HANGOVER_MS = 400L // 400ms silence before concluding speech segment
     private val MAX_SPEECH_DURATION_MS = 15000L // 15 seconds max segment
-    private val MIN_SPEECH_DURATION_MS = 500L // Minimum 500ms speech for Whisper
+    private val MIN_SPEECH_DURATION_MS = 250L // Minimum 250ms speech for Whisper
     
     private var silenceStartMs: Long = 0L
 

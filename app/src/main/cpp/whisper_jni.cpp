@@ -44,6 +44,7 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeInit(
 
     // Default parameters for transcription
     wrapper->params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    wrapper->params.n_threads = 4;
     wrapper->params.print_realtime = false;
     wrapper->params.print_progress = false;
     wrapper->params.print_timestamps = true;
