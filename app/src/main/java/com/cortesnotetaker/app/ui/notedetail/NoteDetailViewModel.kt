@@ -51,6 +51,25 @@ class NoteDetailViewModel(
 
     init {
         loadNote()
+        observePlaybackState()
+    }
+
+    private fun observePlaybackState() {
+        viewModelScope.launch {
+            audioPlayback.playbackStateFlow.collect { state ->
+                when (state) {
+                    is AudioPlaybackManager.PlaybackState.Ended -> {
+                        _uiState.update { it.copy(isPlaying = false) }
+                        stopPositionUpdates()
+                    }
+                    is AudioPlaybackManager.PlaybackState.Error -> {
+                        _uiState.update { it.copy(isPlaying = false) }
+                        stopPositionUpdates()
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     private fun loadNote() {
@@ -68,7 +87,7 @@ class NoteDetailViewModel(
     }
 
     fun playPause() {
-        if (audioPlayback.isPlaying()) {
+        if (_uiState.value.isPlaying || audioPlayback.isPlaying()) {
             audioPlayback.pause()
             _uiState.update { it.copy(isPlaying = false) }
             stopPositionUpdates()

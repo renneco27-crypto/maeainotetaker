@@ -30,8 +30,20 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun loadAudio(filePath: String) {
         release()
+        if (filePath.isBlank()) {
+            Log.w("AudioPlayback", "Audio file path is empty")
+            return
+        }
+
+        val file = java.io.File(filePath)
+        if (!file.exists()) {
+            Log.e("AudioPlayback", "Audio file does not exist: $filePath")
+            return
+        }
+
         exoPlayer = ExoPlayer.Builder(context).build().apply {
-            val mediaItem = MediaItem.fromUri(Uri.parse(filePath))
+            val uri = Uri.fromFile(file)
+            val mediaItem = MediaItem.fromUri(uri)
             setMediaItem(mediaItem)
             prepare()
             
@@ -41,7 +53,19 @@ class AudioPlaybackManager(private val context: Context) {
                         Player.STATE_IDLE -> _playbackState.value = PlaybackState.Idle
                         Player.STATE_BUFFERING -> _playbackState.value = PlaybackState.Buffering
                         Player.STATE_READY -> _playbackState.value = PlaybackState.Ready
-                        Player.STATE_ENDED -> _playbackState.value = PlaybackState.Ended
+                        Player.STATE_ENDED -> {
+                            _playbackState.value = PlaybackState.Ended
+                            _positionFlow.value = duration.coerceAtLeast(0L)
+                            stopPositionUpdates()
+                        }
+                    }
+                }
+
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (isPlaying) {
+                        startPositionUpdates()
+                    } else {
+                        stopPositionUpdates()
                     }
                 }
 
@@ -51,16 +75,21 @@ class AudioPlaybackManager(private val context: Context) {
                 }
             })
         }
-
-        startPositionUpdates()
     }
 
     fun play() {
-        exoPlayer?.playWhenReady = true
+        exoPlayer?.let { player ->
+            if (player.playbackState == Player.STATE_ENDED) {
+                player.seekTo(0)
+            }
+            player.play()
+        }
+        startPositionUpdates()
     }
 
     fun pause() {
-        exoPlayer?.playWhenReady = false
+        exoPlayer?.pause()
+        stopPositionUpdates()
     }
 
     fun seekTo(positionMs: Long) {
@@ -72,7 +101,7 @@ class AudioPlaybackManager(private val context: Context) {
 
     fun getDuration(): Long = exoPlayer?.duration ?: 0L
 
-    fun isPlaying(): Boolean = exoPlayer?.playWhenReady == true && exoPlayer?.playbackState == Player.STATE_READY
+    fun isPlaying(): Boolean = exoPlayer?.isPlaying == true
 
     fun release() {
         stopPositionUpdates()
@@ -90,7 +119,7 @@ class AudioPlaybackManager(private val context: Context) {
                         _positionFlow.value = it.currentPosition
                     }
                 }
-                delay(200)
+                delay(100)
             }
         }
     }

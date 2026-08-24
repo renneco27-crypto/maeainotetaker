@@ -25,11 +25,14 @@ class SileroVadDetector(private val context: Context) {
     private var isInSpeech = false
     
     // Thresholds for hysteresis
-    private val SPEECH_THRESHOLD = 0.5f
-    private val SILENCE_THRESHOLD = 0.35f
-    private val MAX_SPEECH_DURATION_MS = 10000 // 10 seconds max segment
-    private val MIN_SPEECH_DURATION_MS = 100 // Minimum 100ms speech
+    private val SPEECH_THRESHOLD = 0.45f
+    private val SILENCE_THRESHOLD = 0.25f
+    private val SILENCE_HANGOVER_MS = 600L // 600ms silence before concluding speech segment
+    private val MAX_SPEECH_DURATION_MS = 15000L // 15 seconds max segment
+    private val MIN_SPEECH_DURATION_MS = 500L // Minimum 500ms speech for Whisper
     
+    private var silenceStartMs: Long = 0L
+
     private val speechSegmentChannel = Channel<SpeechSegment>(Channel.UNLIMITED)
     val speechSegmentFlow: ReceiveChannel<SpeechSegment> = speechSegmentChannel
 
@@ -136,39 +139,41 @@ class SileroVadDetector(private val context: Context) {
         val currentTimeMs = System.currentTimeMillis()
         
         if (prob > SPEECH_THRESHOLD) {
+            silenceStartMs = 0L
             if (!isInSpeech) {
                 isInSpeech = true
-                accumulatedSpeechStartMs = currentTimeMs - (FRAME_DURATION_MS * 2)
+                accumulatedSpeechStartMs = currentTimeMs
                 accumulatedSpeechFrames.clear()
             }
-            isInSpeech = true
             lastSpeechEndMs = currentTimeMs
             accumulatedSpeechFrames.addAll(pcmFrame.toList())
-            
-        } else if (prob < SILENCE_THRESHOLD && isInSpeech) {
-            val speechDuration = currentTimeMs - accumulatedSpeechStartMs
-            
-            if (speechDuration >= MIN_SPEECH_DURATION_MS) {
-                val pcmData = accumulatedSpeechFrames.toShortArray()
-                val segment = SpeechSegment(pcmData, accumulatedSpeechStartMs, currentTimeMs)
-                accumulatedSpeechFrames.clear()
-                isInSpeech = false
-                speechSegmentChannel.trySend(segment)
-                return segment
+        } else {
+            if (isInSpeech) {
+                accumulatedSpeechFrames.addAll(pcmFrame.toList())
+                if (silenceStartMs == 0L) {
+                    silenceStartMs = currentTimeMs
+                }
+                
+                val silenceDuration = currentTimeMs - silenceStartMs
+                val totalSpeechDuration = currentTimeMs - accumulatedSpeechStartMs
+
+                if (silenceDuration >= SILENCE_HANGOVER_MS || totalSpeechDuration >= MAX_SPEECH_DURATION_MS) {
+                    val speechDuration = lastSpeechEndMs - accumulatedSpeechStartMs
+                    if (speechDuration >= MIN_SPEECH_DURATION_MS && accumulatedSpeechFrames.isNotEmpty()) {
+                        val pcmData = accumulatedSpeechFrames.toShortArray()
+                        val segment = SpeechSegment(pcmData, accumulatedSpeechStartMs, lastSpeechEndMs)
+                        accumulatedSpeechFrames.clear()
+                        isInSpeech = false
+                        silenceStartMs = 0L
+                        speechSegmentChannel.trySend(segment)
+                        return segment
+                    }
+                    accumulatedSpeechFrames.clear()
+                    isInSpeech = false
+                    silenceStartMs = 0L
+                }
             }
-            accumulatedSpeechFrames.clear()
-            isInSpeech = false
         }
-        
-        if (isInSpeech && (currentTimeMs - accumulatedSpeechStartMs) >= MAX_SPEECH_DURATION_MS) {
-            val pcmData = accumulatedSpeechFrames.toShortArray()
-            val segment = SpeechSegment(pcmData, accumulatedSpeechStartMs, currentTimeMs)
-            accumulatedSpeechFrames.clear()
-            isInSpeech = false
-            speechSegmentChannel.trySend(segment)
-            return segment
-        }
-        
         return null
     }
 
@@ -176,6 +181,7 @@ class SileroVadDetector(private val context: Context) {
         state = FloatArray(2 * 1 * 128)
         accumulatedSpeechFrames.clear()
         isInSpeech = false
+        silenceStartMs = 0L
     }
 
     fun release() {

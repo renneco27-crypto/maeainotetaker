@@ -15,8 +15,8 @@ class WhisperEngine {
     private var modelPath: String? = null
 
     external fun nativeInit(modelPath: String): Long
-    external fun nativeTranscribe(pcmData: FloatArray, language: String): WhisperResult?
-    external fun nativeRelease()
+    external fun nativeTranscribe(ctxPtr: Long, pcmData: FloatArray, language: String): WhisperResult?
+    external fun nativeRelease(ctxPtr: Long)
 
     companion object {
         init {
@@ -78,7 +78,7 @@ class WhisperEngine {
             }
             
             val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
-            val result = nativeTranscribe(floatData, language)
+            val result = nativeTranscribe(nativeContext, floatData, language)
             
             if (result != null && result.avgLogProb < -1.0f) {
                 result.text = if (result.text.isNotBlank()) "[unclear]" else ""
@@ -90,7 +90,7 @@ class WhisperEngine {
 
     fun release() {
         if (isInitialized && nativeContext != 0L) {
-            nativeRelease()
+            nativeRelease(nativeContext)
             nativeContext = 0
             isInitialized = false
             Log.d("WhisperEngine", "Whisper native engine released")

@@ -124,9 +124,6 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
         return nullptr;
     }
 
-    jmethodID constructor = env->GetMethodID(result_class, "<init>", "()V");
-    jobject result_obj = env->NewObject(result_class, constructor);
-
     // Set text field (combined transcript)
     std::string full_text;
     for (int i = 0; i < n_segments; i++) {
@@ -136,9 +133,6 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
             if (i < n_segments - 1) full_text += " ";
         }
     }
-
-    jfieldID text_field = env->GetFieldID(result_class, "text", "Ljava/lang/String;");
-    env->SetObjectField(result_obj, text_field, env->NewStringUTF(full_text.c_str()));
 
     // Set avgLogProb field
     float avg_logprob = 0.0f;
@@ -155,56 +149,16 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
         avg_logprob /= total_tokens;
     }
 
-    jfieldID logprob_field = env->GetFieldID(result_class, "avgLogProb", "F");
-    env->SetFloatField(result_obj, logprob_field, avg_logprob);
-
-    // Set segments array
-    jclass segment_class = env->FindClass("com/cortesnotetaker/app/stt/WhisperSegment");
-    if (!segment_class) {
-        LOGE("Failed to find WhisperSegment class");
-        return result_obj;
+    jmethodID constructor = env->GetMethodID(result_class, "<init>", "(Ljava/lang/String;F)V");
+    if (!constructor) {
+        LOGE("Failed to find WhisperResult constructor(String, float)");
+        return nullptr;
     }
 
-    jmethodID segment_constructor = env->GetMethodID(segment_class, "<init>", "()V");
-    jfieldID segment_text_field = env->GetFieldID(segment_class, "text", "Ljava/lang/String;");
-    jfieldID segment_start_field = env->GetFieldID(segment_class, "startMs", "J");
-    jfieldID segment_end_field = env->GetFieldID(segment_class, "endMs", "J");
-    jfieldID segment_avg_logprob_field = env->GetFieldID(segment_class, "avgLogProb", "F");
+    jstring jtext = env->NewStringUTF(full_text.c_str());
+    jobject result_obj = env->NewObject(result_class, constructor, jtext, avg_logprob);
 
-    jobjectArray segments_array = env->NewObjectArray(n_segments, segment_class, nullptr);
-    
-    for (int i = 0; i < n_segments; i++) {
-        jobject segment_obj = env->NewObject(segment_class, segment_constructor);
-        
-        const char* seg_text = whisper_full_get_segment_text(wrapper->ctx, i);
-        if (seg_text) {
-            env->SetObjectField(segment_obj, segment_text_field, env->NewStringUTF(seg_text));
-        }
-
-        int64_t t0 = whisper_full_get_segment_t0(wrapper->ctx, i);
-        int64_t t1 = whisper_full_get_segment_t1(wrapper->ctx, i);
-        env->SetLongField(segment_obj, segment_start_field, t0 * 10); // Convert to ms
-        env->SetLongField(segment_obj, segment_end_field, t1 * 10);   // Convert to ms
-
-        // Calculate segment avg logprob
-        float seg_logprob = 0.0f;
-        int seg_tokens = whisper_full_n_tokens(wrapper->ctx, i);
-        for (int j = 0; j < seg_tokens; j++) {
-            float p = whisper_full_get_token_p(wrapper->ctx, i, j);
-            seg_logprob += (p > 0.0001f ? logf(p) : -9.21f);
-        }
-        if (seg_tokens > 0) {
-            seg_logprob /= seg_tokens;
-        }
-        env->SetFloatField(segment_obj, segment_avg_logprob_field, seg_logprob);
-
-        env->SetObjectArrayElement(segments_array, i, segment_obj);
-    }
-
-    jfieldID segments_field = env->GetFieldID(result_class, "segments", "[Lcom/cortesnotetaker/app/stt/WhisperSegment;");
-    env->SetObjectField(result_obj, segments_field, segments_array);
-
-    LOGD("Returning transcription result");
+    LOGD("Returning transcription result: %s", full_text.c_str());
     return result_obj;
 }
 

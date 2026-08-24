@@ -102,12 +102,13 @@ class RecordingViewModel(
         }
 
         val currentState = _uiState.value
+        val audioPath = recordingService?.getCurrentAudioPath() ?: ""
         _uiState.update { it.copy(isRecording = false, isPaused = false) }
 
         val note = NoteEntity(
             title = currentState.subject.ifBlank { "Lecture ${formatTimestamp(System.currentTimeMillis())}" },
             subject = currentState.subject.ifBlank { null },
-            audioFilePath = "", // Populated during playback
+            audioFilePath = audioPath,
             durationMs = currentState.elapsedTimeMs,
             language = "auto"
         )

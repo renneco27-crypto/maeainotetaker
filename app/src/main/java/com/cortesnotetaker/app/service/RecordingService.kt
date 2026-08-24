@@ -89,7 +89,7 @@ class RecordingService : Service() {
         currentNoteId = intent?.getLongExtra(EXTRA_NOTE_ID, 0) ?: 0
         val subject = intent?.getStringExtra(EXTRA_SUBJECT) ?: ""
         
-        currentAudioPath = MediaRecorderManager.getDefaultRecordingPath(this)
+        currentAudioPath = AudioCaptureManager.getDefaultRecordingPath(this)
         
         // Start foreground immediately to satisfy Android background start requirements
         val notification = buildNotification("Starting recording...", subject)
@@ -105,11 +105,10 @@ class RecordingService : Service() {
 
         pipelineJob = serviceScope.launch {
             val whisperInitialized = whisperEngine.initialize(this@RecordingService)
-            val audioStarted = audioCapture.start()
-            val recorderStarted = mediaRecorder.start(currentAudioPath)
+            val audioStarted = audioCapture.start(currentAudioPath)
             
-            if (!audioStarted || !recorderStarted || !whisperInitialized) {
-                Log.e("RecordingService", "Failed to start recording components")
+            if (!audioStarted || !whisperInitialized) {
+                Log.e("RecordingService", "Failed to start recording components (audio=$audioStarted, whisper=$whisperInitialized)")
                 stopSelf()
                 return@launch
             }
@@ -125,19 +124,24 @@ class RecordingService : Service() {
                 if (!isPaused) {
                     val speechSegment = vadDetector.processPcmFrame(pcmFrame)
                     speechSegment?.let { segment ->
+                        val startOffset = maxOf(0L, segment.startMs - recordingStartTime)
+                        val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
+                        
                         // Transcribe
                         val result = whisperEngine.transcribe(segment.pcmData, "auto")
                         result?.let { whisperResult ->
-                            val transcriptSegment = TranscriptSegment(
-                                noteId = currentNoteId,
-                                startMs = segment.startMs,
-                                endMs = segment.endMs,
-                                text = whisperResult.text,
-                                isUnclear = whisperResult.text == "[unclear]",
-                                confidenceScore = whisperResult.avgLogProb,
-                                timestamp = System.currentTimeMillis()
-                            )
-                            transcriptFlow.tryEmit(transcriptSegment)
+                            if (whisperResult.text.isNotBlank()) {
+                                val transcriptSegment = TranscriptSegment(
+                                    noteId = currentNoteId,
+                                    startMs = startOffset,
+                                    endMs = endOffset,
+                                    text = whisperResult.text.trim(),
+                                    isUnclear = whisperResult.text == "[unclear]",
+                                    confidenceScore = whisperResult.avgLogProb,
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                transcriptFlow.tryEmit(transcriptSegment)
+                            }
                         }
                     }
                 }
@@ -150,7 +154,6 @@ class RecordingService : Service() {
         isPaused = true
         pausedTime = System.currentTimeMillis()
         audioCapture.pause()
-        mediaRecorder.pause()
         updateNotification("Paused", "")
     }
 
@@ -160,19 +163,19 @@ class RecordingService : Service() {
         val pauseDuration = System.currentTimeMillis() - pausedTime
         recordingStartTime += pauseDuration
         audioCapture.resume()
-        mediaRecorder.resume()
         updateNotification("Recording...", "")
     }
 
     private fun handleStop() {
         pipelineJob?.cancel()
         audioCapture.stop()
-        mediaRecorder.stop()
         vadDetector.reset()
         whisperEngine.release()
         stopForeground(true)
         stopSelf()
     }
+
+    fun getCurrentAudioPath(): String = currentAudioPath
 
     private fun buildNotification(title: String, subject: String): Notification {
         val contentIntent = PendingIntent.getActivity(
