@@ -104,7 +104,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.material3)
-    implementation(libs.compose.material3.adaptive)
     implementation(libs.compose.foundation)
     implementation(libs.compose.foundation.layout)
     implementation(libs.compose.animation)
@@ -117,7 +116,6 @@ dependencies {
     implementation(libs.material.icons.extended)
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
-    implementation(libs.constraintlayout.compose)
 
     // Room
     implementation(libs.room.runtime)
@@ -133,8 +131,6 @@ dependencies {
     // Koin DI
     implementation(libs.koin.android)
     implementation(libs.koin.androidx.compose)
-    implementation(libs.koin.androidx.viewmodel)
-    implementation(libs.koin.androidx.scope)
 
     // ONNX Runtime for Silero VAD
     implementation(libs.onnxruntime.android)
