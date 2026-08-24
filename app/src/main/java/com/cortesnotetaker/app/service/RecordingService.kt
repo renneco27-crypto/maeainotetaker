@@ -138,7 +138,7 @@ class RecordingService : Service() {
                     val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
                     
                     Log.d("RecordingService", "Whisper processing segment (${segment.pcmData.size} samples)...")
-                    val result = whisperEngine.transcribe(segment.pcmData, "auto")
+                    val result = whisperEngine.transcribe(segment.pcmData, "en")
                     result?.let { whisperResult ->
                         Log.d("RecordingService", "Whisper finished transcription: '${whisperResult.text}' (logprob=${whisperResult.avgLogProb})")
                         if (whisperResult.text.isNotBlank()) {

@@ -47,15 +47,18 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeInit(
     wrapper->params.n_threads = 4;
     wrapper->params.print_realtime = false;
     wrapper->params.print_progress = false;
-    wrapper->params.print_timestamps = true;
+    wrapper->params.print_timestamps = false;
     wrapper->params.print_special = false;
     wrapper->params.translate = false;
-    wrapper->params.language = "auto";
-    wrapper->params.detect_language = true;
+    wrapper->params.language = "en";
+    wrapper->params.detect_language = false;
+    wrapper->params.no_context = true;
+    wrapper->params.single_segment = true;
     wrapper->params.suppress_blank = true;
+    wrapper->params.suppress_non_speech_tokens = true;
     wrapper->params.max_len = 0;
     wrapper->params.split_on_word = true;
-    wrapper->params.token_timestamps = true;
+    wrapper->params.token_timestamps = false;
     wrapper->params.thold_pt = 0.01f;
     wrapper->params.thold_ptsum = 0.01f;
     wrapper->params.max_tokens = 0;
@@ -85,21 +88,21 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
     }
 
     // Get language parameter
-    const char* language_c = "auto";
+    const char* language_c = "en";
     if (language) {
         language_c = env->GetStringUTFChars(language, nullptr);
     }
 
     // Update language if specified
-    if (language_c && strcmp(language_c, "auto") != 0) {
+    if (language_c && strlen(language_c) > 0 && strcmp(language_c, "auto") != 0) {
         wrapper->params.language = language_c;
         wrapper->params.detect_language = false;
     } else {
-        wrapper->params.language = "auto";
-        wrapper->params.detect_language = true;
+        wrapper->params.language = "en";
+        wrapper->params.detect_language = false;
     }
 
-    LOGD("Starting transcription: %d samples, language: %s", pcm_length, language_c);
+    LOGD("Starting transcription: %d samples, language: %s", pcm_length, wrapper->params.language);
 
     // Run whisper
     int result = whisper_full(wrapper->ctx, wrapper->params, pcm_elements, pcm_length);
