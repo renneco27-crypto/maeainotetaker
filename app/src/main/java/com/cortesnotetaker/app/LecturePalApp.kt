@@ -1,7 +1,13 @@
 package com.cortesnotetaker.app
 
 import android.app.Application
+import android.util.Log
 import com.cortesnotetaker.app.di.allModules
+import com.cortesnotetaker.app.stt.WhisperEngine
+import com.cortesnotetaker.app.vad.SileroVadDetector
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.core.context.startKoin
@@ -16,14 +22,14 @@ class LecturePalApp : Application() {
         }
 
         // Prewarm Whisper and VAD models in background
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
-                val whisper = com.cortesnotetaker.app.stt.WhisperEngine()
+                val whisper = WhisperEngine()
                 whisper.initialize(this@LecturePalApp)
-                val vad = com.cortesnotetaker.app.vad.SileroVadDetector(this@LecturePalApp)
-                android.util.Log.d("LecturePalApp", "Pre-warmed Whisper & VAD engines successfully")
+                val vad = SileroVadDetector(this@LecturePalApp)
+                Log.d("LecturePalApp", "Pre-warmed Whisper & VAD engines successfully")
             } catch (e: Exception) {
-                android.util.Log.e("LecturePalApp", "Pre-warming error", e)
+                Log.e("LecturePalApp", "Pre-warming error", e)
             }
         }
     }
