@@ -55,7 +55,7 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeInit(
     wrapper->params.no_context = true;
     wrapper->params.single_segment = true;
     wrapper->params.suppress_blank = true;
-    wrapper->params.suppress_non_speech_tokens = true;
+    wrapper->params.suppress_nst = true;
     wrapper->params.max_len = 0;
     wrapper->params.split_on_word = true;
     wrapper->params.token_timestamps = false;
