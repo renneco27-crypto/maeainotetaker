@@ -1,17 +1,7 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
+    <!-- Base application theme for Jetpack Compose app -->
     <style name="Theme.LecturePal" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- Primary brand color. -->
-        <item name="android:colorPrimary">@color/purple_500</item>
-        <item name="android:colorPrimaryVariant">@color/purple_700</item>
-        <item name="android:colorOnPrimary">@color/white</item>
-        <!-- Secondary brand color. -->
-        <item name="android:colorSecondary">@color/teal_200</item>
-        <item name="android:colorSecondaryVariant">@color/teal_700</item>
-        <item name="android:colorOnSecondary">@color/black</item>
-        <!-- Status bar color. -->
         <item name="android:statusBarColor">@color/purple_700</item>
-        <!-- Customize your theme here. -->
         <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
