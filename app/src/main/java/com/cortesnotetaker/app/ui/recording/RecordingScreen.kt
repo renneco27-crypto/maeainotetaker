@@ -4,21 +4,29 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Bundle
 import android.os.IBinder
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,9 +34,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -41,19 +49,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.keyboard.KeyboardOptions
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cortesnotetaker.app.service.RecordingService
 import com.cortesnotetaker.app.stt.TranscriptSegment
 import com.cortesnotetaker.app.ui.theme.LecturePalColors
-import com.cortesnotetaker.app.ui.theme.LecturePalTheme
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordingScreen(
     onRecordingComplete: (Long) -> Unit,
@@ -62,6 +72,7 @@ fun RecordingScreen(
     var subject by remember { mutableStateOf("") }
     var showSubjectInput by remember { mutableStateOf(true) }
     var isBinding by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -82,15 +93,15 @@ fun RecordingScreen(
 
     // Bind to service
     DisposableEffect(key1 = true) {
-        val intent = Intent(LocalContext.current, RecordingService::class.java)
-        val context = LocalContext.current
+        val intent = Intent(context, RecordingService::class.java)
         val bound = context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        if (!bound) {
-            viewModel._uiState.update { it.copy(error = "Failed to bind to recording service") }
-        }
         onDispose {
             if (isBinding) {
-                context.unbindService(serviceConnection)
+                try {
+                    context.unbindService(serviceConnection)
+                } catch (e: Exception) {
+                    // Ignore unbind issues on teardown
+                }
             }
         }
     }
@@ -119,7 +130,8 @@ fun RecordingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (showSubjectInput) {
@@ -138,14 +150,16 @@ fun RecordingScreen(
                     onResume = { viewModel.resumeRecording() },
                     onStop = {
                         stopRequested = true
-                        viewModel.stopRecording { /* callback handled by LaunchedEffect */ }
+                        viewModel.stopRecording { noteId ->
+                            onRecordingComplete(noteId)
+                        }
                     }
                 )
             }
 
             if (uiState.error != null) {
                 Text(
-                    text = uiState.error!!,
+                    text = uiState.error ?: "",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -170,11 +184,11 @@ fun SubjectInput(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            androidx.compose.material3.Icon(
-                imageVector = androidx.compose.material.icons.filled.Mic,
-                contentDescription = "",
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                size = 96.dp
+                modifier = Modifier.size(96.dp)
             )
             Text(
                 text = "New Lecture Recording",
@@ -187,25 +201,24 @@ fun SubjectInput(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
-            androidx.compose.material3.TextField(
+            OutlinedTextField(
                 value = subject,
                 onValueChange = onSubjectChange,
                 label = { Text("Subject (e.g., Calculus, History)") },
-                modifier = Modifier.fillMaxWidth().width(300.dp),
+                modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions.Default,
                 singleLine = true
             )
             Button(
                 onClick = onStartRecording,
-                modifier = Modifier.fillMaxWidth().width(200.dp).height(56.dp),
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                )
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
             ) {
                 Text("Start Recording", fontSize = 18.sp, fontWeight = FontWeight.Medium)
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -229,127 +242,149 @@ fun RecordingActiveView(
             )
         }
 
-        // Timer
+        // Live timer display
         Text(
-            text = viewModel.formatElapsedTime(uiState.elapsedMs),
-            style = MaterialTheme.typography.displayLarge,
+            text = formatElapsedDuration(uiState.elapsedTimeMs),
+            style = MaterialTheme.typography.displayMedium,
             fontWeight = FontWeight.Bold,
-            color = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant
-            else LecturePalColors.RecordingRed
+            color = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed
         )
 
-        // Recording indicator
-        RecordingIndicator(isRecording = uiState.isRecording && !uiState.isPaused)
+        // Pulsing audio animation
+        Box(
+            modifier = Modifier
+                .size(120.dp)
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            val ringColor = if (uiState.isPaused) LecturePalColors.WaveformInactive else LecturePalColors.RecordingRed
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawCircle(
+                    color = ringColor,
+                    radius = size.minDimension / 2,
+                    style = Stroke(width = 3.dp.toPx())
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = null,
+                tint = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed,
+                modifier = Modifier.size(48.dp)
+            )
+        }
 
-        // Live transcript
-        if (uiState.segments.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                ),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    reverseLayout = true,
-                    userScrollEnabled = true
+        // Status badge
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (uiState.isPaused) MaterialTheme.colorScheme.surfaceVariant
+                else LecturePalColors.RecordingRed.copy(alpha = 0.12f)
+            )
+        ) {
+            Text(
+                text = if (uiState.isPaused) "PAUSED" else "RECORDING & TRANSCRIBING",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed
+            )
+        }
+
+        // Controls
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (uiState.isPaused) {
+                IconButton(
+                    onClick = onResume,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
                 ) {
-                    items(uiState.segments.reversed()) { segment ->
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Resume",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            } else {
+                IconButton(
+                    onClick = onPause,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Pause,
+                        contentDescription = "Pause",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+
+            IconButton(
+                onClick = onStop,
+                modifier = Modifier
+                    .size(64.dp)
+                    .background(LecturePalColors.RecordingRed, CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Stop,
+                    contentDescription = "Stop",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Live transcription stream
+        Text(
+            text = "Live Transcription",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            if (uiState.liveTranscriptSegments.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Listening for speech... Transcripts appear here progressively.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(uiState.liveTranscriptSegments) { segment ->
                         TranscriptSegmentItem(segment = segment)
                     }
                 }
             }
         }
-
-        // Control buttons
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            if (uiState.isPaused) {
-                Button(
-                    onClick = onResume,
-                    modifier = Modifier.width(0f).weight(1f).padding(end = 8.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Text("Resume", fontWeight = FontWeight.Medium)
-                }
-            } else {
-                Button(
-                    onClick = onPause,
-                    modifier = Modifier.width(0f).weight(1f).padding(end = 8.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer
-                    )
-                ) {
-                    Text("Pause", fontWeight = FontWeight.Medium)
-                }
-            }
-
-            Button(
-                onClick = onStop,
-                modifier = Modifier.width(0f).weight(1f).padding(start = 8.dp),
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                )
-            ) {
-                Text("Stop", fontWeight = FontWeight.Medium)
-            }
-        }
-    }
-}
-
-@Composable
-fun RecordingIndicator(isRecording: Boolean) {
-    Box(
-        modifier = Modifier.size(80.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        // Outer pulse ring
-        if (isRecording) {
-            PulseRing()
-        }
-        // Inner circle
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier.size(60.dp)
-        ) {
-            val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
-            drawCircle(
-                color = if (isRecording) LecturePalColors.RecordingRed else LecturePalColors.WaveformInactive,
-                center = center,
-                radius = 30.dp.toPx()
-            )
-        }
-    }
-}
-
-@Composable
-fun PulseRing() {
-    var progress by remember { mutableStateOf(0f) }
-    androidx.compose.animation.animateFloatAsState(
-        targetValue = 1f,
-        animationSpec = androidx.compose.animation.infiniteRepeatable(
-            animation = androidx.compose.animation.tween(1500, delayMillis = 0, easing = androidx.compose.animation.LinearEasing),
-            repeatMode = androidx.compose.animation.RepeatMode.Restart
-        )
-    ).value.also { progress = it }
-
-    androidx.compose.foundation.Canvas(
-        modifier = Modifier.size(80.dp)
-    ) {
-        val center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2)
-        val radius = 30.dp.toPx() + (20.dp.toPx() * progress)
-        val alpha = (1f - progress) * 0.5f
-        drawCircle(
-            color = LecturePalColors.RecordingRed.copy(alpha = alpha),
-            center = center,
-            radius = radius,
-            style = androidx.compose.ui.draw.Stroke(width = 3.dp.toPx())
-        )
     }
 }
 
@@ -361,18 +396,28 @@ fun TranscriptSegmentItem(segment: TranscriptSegment) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         Text(
             text = segment.formatTimestamp(),
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = if (isUnclear) "[unclear]" else text,
             style = MaterialTheme.typography.bodyMedium,
             color = if (isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
-            fontStyle = if (isUnclear) androidx.compose.ui.text.font.FontStyle.Italic else androidx.compose.ui.text.font.FontStyle.Normal
+            fontStyle = if (isUnclear) FontStyle.Italic else FontStyle.Normal
         )
     }
+}
+
+fun formatElapsedDuration(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds)
+    else String.format("%02d:%02d", minutes, seconds)
 }
