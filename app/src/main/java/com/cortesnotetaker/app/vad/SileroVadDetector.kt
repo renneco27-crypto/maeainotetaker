@@ -68,19 +68,27 @@ class SileroVadDetector(private val context: Context) {
         return modelFile.absolutePath
     }
 
+    private val CONTEXT_SIZE = 64
+    private val contextBuffer = FloatArray(CONTEXT_SIZE)
+
     fun processPcmFrame(pcmData: ShortArray): SpeechSegment? {
         val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
-        return processPaddedFrame(floatData, pcmData)
-    }
-
-    private fun processPaddedFrame(input: FloatArray, originalPcm: ShortArray): SpeechSegment? {
         val frame = FloatArray(512)
-        val copySize = minOf(input.size, 512)
-        System.arraycopy(input, 0, frame, 0, copySize)
+        val copySize = minOf(floatData.size, 512)
+        System.arraycopy(floatData, 0, frame, 0, copySize)
         
         val pcmFrame = ShortArray(512)
-        System.arraycopy(originalPcm, 0, pcmFrame, 0, copySize)
-        return runInference(frame, pcmFrame)
+        System.arraycopy(pcmData, 0, pcmFrame, 0, copySize)
+
+        // Prepend 64-sample context -> 576 input samples for Silero VAD v5
+        val modelInput = FloatArray(CONTEXT_SIZE + 512)
+        System.arraycopy(contextBuffer, 0, modelInput, 0, CONTEXT_SIZE)
+        System.arraycopy(frame, 0, modelInput, CONTEXT_SIZE, 512)
+
+        // Update context with last 64 samples of current frame
+        System.arraycopy(frame, 512 - CONTEXT_SIZE, contextBuffer, 0, CONTEXT_SIZE)
+
+        return runInference(modelInput, pcmFrame)
     }
 
     private fun runInference(frame: FloatArray, pcmFrame: ShortArray): SpeechSegment? {
@@ -94,13 +102,13 @@ class SileroVadDetector(private val context: Context) {
 
         try {
             val inputBuffer = FloatBuffer.wrap(frame)
-            inputTensor = OnnxTensor.createTensor(env, inputBuffer, longArrayOf(1, 512))
+            inputTensor = OnnxTensor.createTensor(env, inputBuffer, longArrayOf(1, 576))
 
             val stateBuffer = FloatBuffer.wrap(state)
             stateTensor = OnnxTensor.createTensor(env, stateBuffer, longArrayOf(2, 1, 128))
 
             val srBuffer = LongBuffer.wrap(longArrayOf(sampleRate))
-            srTensor = OnnxTensor.createTensor(env, srBuffer, longArrayOf(1))
+            srTensor = OnnxTensor.createTensor(env, srBuffer, longArrayOf())
 
             val inputs = mapOf(
                 "input" to inputTensor,
@@ -179,6 +187,7 @@ class SileroVadDetector(private val context: Context) {
 
     fun reset() {
         state = FloatArray(2 * 1 * 128)
+        java.util.Arrays.fill(contextBuffer, 0f)
         accumulatedSpeechFrames.clear()
         isInSpeech = false
         silenceStartMs = 0L
