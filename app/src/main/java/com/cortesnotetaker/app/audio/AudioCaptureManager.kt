@@ -103,9 +103,11 @@ class AudioCaptureManager(private val context: Context) {
         return Runnable {
             val buffer = ShortArray(FRAME_SIZE)
             val byteBuffer = ByteBuffer.allocate(FRAME_SIZE * 2).order(ByteOrder.LITTLE_ENDIAN)
+            var frameCount = 0L
             while (isRecording.value) {
                 val read = audioRecord?.read(buffer, 0, FRAME_SIZE) ?: 0
                 if (read > 0) {
+                    frameCount++
                     val frame = buffer.copyOf(read)
                     pcmChannel.trySend(frame)
 
@@ -119,6 +121,10 @@ class AudioCaptureManager(private val context: Context) {
                         totalPcmBytesWritten += bytesToWrite
                     } catch (e: Exception) {
                         Log.e("AudioCapture", "Error writing audio to WAV file", e)
+                    }
+
+                    if (frameCount % 100L == 0L) {
+                        Log.d("AudioCapture", "AudioCapture running: frame #$frameCount, bytes=$totalPcmBytesWritten")
                     }
                 } else if (read < 0) {
                     Log.e("AudioCapture", "AudioRecord read error: $read")

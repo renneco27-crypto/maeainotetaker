@@ -84,12 +84,14 @@ class NoteDetailViewModel(
     private fun loadNote() {
         viewModelScope.launch {
             val note = noteRepository.getNoteById(noteId)
+            android.util.Log.d("NoteDetailViewModel", "Loading note id=$noteId: title='${note?.title}', audio='${note?.audioFilePath}'")
             note?.let {
                 _uiState.update { current -> current.copy(note = it, totalDurationMs = it.durationMs) }
                 audioPlayback.loadAudio(it.audioFilePath)
             }
             
             segmentRepository.getSegmentsForNote(noteId).collect { segments ->
+                android.util.Log.d("NoteDetailViewModel", "Loaded ${segments.size} transcript segments for note id=$noteId")
                 _uiState.update { current -> current.copy(segments = segments) }
             }
         }

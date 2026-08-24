@@ -152,6 +152,7 @@ class SileroVadDetector(private val context: Context) {
                 isInSpeech = true
                 accumulatedSpeechStartMs = currentTimeMs
                 accumulatedSpeechFrames.clear()
+                Log.d("SileroVAD", "Speech STARTED: prob=$prob")
             }
             lastSpeechEndMs = currentTimeMs
             accumulatedSpeechFrames.addAll(pcmFrame.toList())
@@ -170,6 +171,7 @@ class SileroVadDetector(private val context: Context) {
                     if (speechDuration >= MIN_SPEECH_DURATION_MS && accumulatedSpeechFrames.isNotEmpty()) {
                         val pcmData = accumulatedSpeechFrames.toShortArray()
                         val segment = SpeechSegment(pcmData, accumulatedSpeechStartMs, lastSpeechEndMs)
+                        Log.d("SileroVAD", "Speech segment COMPLETED: duration=${speechDuration}ms, samples=${pcmData.size}")
                         accumulatedSpeechFrames.clear()
                         isInSpeech = false
                         silenceStartMs = 0L

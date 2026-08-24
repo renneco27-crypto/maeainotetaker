@@ -124,6 +124,7 @@ class RecordingService : Service() {
                     if (!isPaused) {
                         val speechSegment = vadDetector.processPcmFrame(pcmFrame)
                         speechSegment?.let { segment ->
+                            Log.d("RecordingService", "Sending speech segment to queue (${segment.pcmData.size} samples)")
                             speechQueue.send(segment)
                         }
                     }
@@ -136,8 +137,10 @@ class RecordingService : Service() {
                     val startOffset = maxOf(0L, segment.startMs - recordingStartTime)
                     val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
                     
+                    Log.d("RecordingService", "Whisper processing segment (${segment.pcmData.size} samples)...")
                     val result = whisperEngine.transcribe(segment.pcmData, "auto")
                     result?.let { whisperResult ->
+                        Log.d("RecordingService", "Whisper finished transcription: '${whisperResult.text}' (logprob=${whisperResult.avgLogProb})")
                         if (whisperResult.text.isNotBlank()) {
                             val transcriptSegment = TranscriptSegment(
                                 noteId = currentNoteId,
@@ -148,6 +151,7 @@ class RecordingService : Service() {
                                 confidenceScore = whisperResult.avgLogProb,
                                 timestamp = System.currentTimeMillis()
                             )
+                            Log.d("RecordingService", "EMITTING transcript segment to UI: '${transcriptSegment.text}'")
                             transcriptSharedFlow.emit(transcriptSegment)
                         }
                     }
