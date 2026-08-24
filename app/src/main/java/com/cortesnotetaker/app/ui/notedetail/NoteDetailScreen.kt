@@ -45,23 +45,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cortesnotetaker.app.data.db.entity.SegmentEntity
 import com.cortesnotetaker.app.ui.theme.LecturePalColors
+import org.koin.androidx.compose.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteDetailScreen(
     noteId: Long,
     onNavigateBack: () -> Unit = {},
-    viewModel: NoteDetailViewModel = viewModel(
-        factory = NoteDetailViewModel.Factory(
-            noteId = noteId,
-            noteRepository = org.koin.compose.koinInject(),
-            segmentRepository = org.koin.compose.koinInject(),
-            context = LocalContext.current
-        )
-    )
+    viewModel: NoteDetailViewModel = koinViewModel { parametersOf(noteId) }
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var title by remember { mutableStateOf(uiState.note?.title ?: "") }

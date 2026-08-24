@@ -58,16 +58,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cortesnotetaker.app.service.RecordingService
 import com.cortesnotetaker.app.stt.TranscriptSegment
 import com.cortesnotetaker.app.ui.theme.LecturePalColors
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordingScreen(
     onRecordingComplete: (Long) -> Unit,
-    viewModel: RecordingViewModel = viewModel()
+    viewModel: RecordingViewModel = koinViewModel()
 ) {
     var subject by remember { mutableStateOf("") }
     var showSubjectInput by remember { mutableStateOf(true) }

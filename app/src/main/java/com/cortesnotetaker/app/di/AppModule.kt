@@ -39,7 +39,7 @@ val audioModule = module {
 val viewModelModule = module {
     viewModel { NoteListViewModel(get()) }
     viewModel { RecordingViewModel(get(), get()) }
-    viewModel { NoteDetailViewModel(get(), get(), get(), androidContext()) }
+    viewModel { (noteId: Long) -> NoteDetailViewModel(noteId, get(), get(), androidContext()) }
 }
 
 val allModules = listOf(appModule, repositoryModule, audioModule, viewModelModule)

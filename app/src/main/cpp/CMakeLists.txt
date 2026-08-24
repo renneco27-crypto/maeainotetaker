@@ -6,12 +6,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Android configuration
-if(ANDROID)
-    set(CMAKE_ANDROID_NDK_VERSION "26.1.10909125")
-    set(CMAKE_ANDROID_STL_TYPE "c++_shared")
-endif()
-
 # whisper.cpp as subdirectory
 add_subdirectory(whisper.cpp)
 

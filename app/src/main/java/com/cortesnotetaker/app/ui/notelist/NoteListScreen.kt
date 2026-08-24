@@ -43,8 +43,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.cortesnotetaker.app.data.db.entity.NoteEntity
+import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -54,7 +54,7 @@ import java.util.Locale
 fun NoteListScreen(
     onNewRecording: () -> Unit,
     onNoteClick: (Long) -> Unit = {},
-    viewModel: NoteListViewModel = viewModel()
+    viewModel: NoteListViewModel = koinViewModel()
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     var showSearch by remember { mutableStateOf(false) }
