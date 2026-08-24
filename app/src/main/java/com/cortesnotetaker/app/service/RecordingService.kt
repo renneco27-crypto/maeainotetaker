@@ -179,9 +179,9 @@ class RecordingService : Service() {
 
     private fun handleStop() {
         pipelineJob?.cancel()
+        pipelineJob = null
         audioCapture.stop()
         vadDetector.reset()
-        whisperEngine.release()
         stopForeground(true)
         stopSelf()
     }
