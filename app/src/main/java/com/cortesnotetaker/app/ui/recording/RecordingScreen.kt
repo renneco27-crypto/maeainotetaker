@@ -5,7 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,14 +25,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -48,9 +58,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -76,7 +86,6 @@ fun RecordingScreen(
     
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Service connection
     val serviceConnection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -91,16 +100,15 @@ fun RecordingScreen(
         }
     }
 
-    // Bind to service
     DisposableEffect(key1 = true) {
         val intent = Intent(context, RecordingService::class.java)
-        val bound = context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         onDispose {
             if (isBinding) {
                 try {
                     context.unbindService(serviceConnection)
                 } catch (e: Exception) {
-                    // Ignore unbind issues on teardown
+                    // Ignore unbind on teardown
                 }
             }
         }
@@ -109,22 +117,25 @@ fun RecordingScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recording", fontWeight = FontWeight.Bold) },
+                title = { 
+                    Text(
+                        text = if (uiState.isRecording) (uiState.subject.ifBlank { "Live Recording" }) else "New Recording",
+                        fontWeight = FontWeight.Bold 
+                    ) 
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
             )
         }
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (showSubjectInput) {
-                SubjectInput(
+                SubjectInputView(
                     subject = subject,
                     onSubjectChange = { subject = it },
                     onStartRecording = {
@@ -133,7 +144,7 @@ fun RecordingScreen(
                     }
                 )
             } else {
-                RecordingActiveView(
+                RecordingLiveView(
                     uiState = uiState,
                     onPause = { viewModel.pauseRecording(context) },
                     onResume = { viewModel.resumeRecording(context) },
@@ -146,91 +157,125 @@ fun RecordingScreen(
             }
 
             if (uiState.error != null) {
-                Text(
-                    text = uiState.error ?: "",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text(
+                        text = uiState.error ?: "",
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun SubjectInput(
+fun SubjectInputView(
     subject: String,
     onSubjectChange: (String) -> Unit,
     onStartRecording: () -> Unit
 ) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(96.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Mic,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(96.dp)
-            )
-            Text(
-                text = "New Lecture Recording",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = "Enter a subject (optional) and tap Start Recording",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            OutlinedTextField(
-                value = subject,
-                onValueChange = onSubjectChange,
-                label = { Text("Subject (e.g., Calculus, History)") },
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions.Default,
-                singleLine = true
-            )
-            Button(
-                onClick = onStartRecording,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-            ) {
-                Text("Start Recording", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(48.dp)
+                )
             }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            text = "Ready to Record",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Enter an optional subject title and start recording your lecture.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = subject,
+            onValueChange = onSubjectChange,
+            label = { Text("Subject (e.g. Physics 101, History)") },
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions.Default,
+            singleLine = true,
+            shape = RoundedCornerShape(12.dp)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Button(
+            onClick = onStartRecording,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = LecturePalColors.RecordingRed
+            )
+        ) {
+            Icon(Icons.Default.Mic, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Start Recording", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
 @Composable
-fun RecordingActiveView(
+fun RecordingLiveView(
     uiState: RecordingViewModel.RecordingUiState,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit
 ) {
+    val listState = rememberLazyListState()
+
+    // Auto-scroll to bottom on new transcripts
+    LaunchedEffect(uiState.liveTranscriptSegments.size) {
+        if (uiState.liveTranscriptSegments.isNotEmpty()) {
+            listState.animateScrollToItem(uiState.liveTranscriptSegments.size - 1)
+        }
+    }
+
     Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Subject display
-        if (uiState.subject.isNotBlank()) {
-            Text(
-                text = uiState.subject,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        // Live timer display
+        // Timer display
         Text(
             text = formatElapsedDuration(uiState.elapsedTimeMs),
             style = MaterialTheme.typography.displayMedium,
@@ -238,138 +283,185 @@ fun RecordingActiveView(
             color = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed
         )
 
-        // Pulsing audio animation
-        Box(
-            modifier = Modifier
-                .size(120.dp)
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Status chip
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = if (uiState.isPaused) MaterialTheme.colorScheme.surfaceVariant
+            else LecturePalColors.RecordingRed.copy(alpha = 0.12f)
         ) {
-            val ringColor = if (uiState.isPaused) LecturePalColors.WaveformInactive else LecturePalColors.RecordingRed
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                    color = ringColor,
-                    radius = size.minDimension / 2,
-                    style = Stroke(width = 3.dp.toPx())
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (!uiState.isPaused) {
+                    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+                    val scale by infiniteTransition.animateFloat(
+                        initialValue = 0.8f,
+                        targetValue = 1.3f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(600, easing = FastOutSlowInEasing),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "scale"
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .scale(scale)
+                            .clip(CircleShape)
+                            .background(LecturePalColors.RecordingRed)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = if (uiState.isPaused) "PAUSED" else "LISTENING & TRANSCRIBING",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed
                 )
             }
-            Icon(
-                imageVector = Icons.Default.Mic,
-                contentDescription = null,
-                tint = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed,
-                modifier = Modifier.size(48.dp)
-            )
         }
 
-        // Status badge
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (uiState.isPaused) MaterialTheme.colorScheme.surfaceVariant
-                else LecturePalColors.RecordingRed.copy(alpha = 0.12f)
-            )
-        ) {
-            Text(
-                text = if (uiState.isPaused) "PAUSED" else "RECORDING & TRANSCRIBING",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = if (uiState.isPaused) MaterialTheme.colorScheme.onSurfaceVariant else LecturePalColors.RecordingRed
-            )
-        }
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Controls
+        // Control buttons
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (uiState.isPaused) {
                 IconButton(
                     onClick = onResume,
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(60.dp)
                         .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Resume",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(30.dp)
                     )
                 }
             } else {
                 IconButton(
                     onClick = onPause,
                     modifier = Modifier
-                        .size(64.dp)
+                        .size(60.dp)
                         .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Pause,
                         contentDescription = "Pause",
                         tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(30.dp)
                     )
                 }
             }
 
+            Spacer(modifier = Modifier.width(24.dp))
+
             IconButton(
                 onClick = onStop,
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(60.dp)
                     .background(LecturePalColors.RecordingRed, CircleShape)
             ) {
                 Icon(
                     imageVector = Icons.Default.Stop,
                     contentDescription = "Stop",
                     tint = Color.White,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Header for Live Transcription
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Live Transcription",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            if (uiState.liveTranscriptSegments.isNotEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "${uiState.liveTranscriptSegments.size} segments",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Live transcription stream
-        Text(
-            text = "Live Transcription",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth()
-        )
-
+        // Main Live Transcript Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-            shape = RoundedCornerShape(12.dp)
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            ),
+            shape = RoundedCornerShape(16.dp)
         ) {
             if (uiState.liveTranscriptSegments.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(16.dp),
+                        .padding(24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "Listening for speech... Transcripts appear here progressively.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = "Listening for speech...",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Speak into your microphone. Transcribed sentences will appear here in real-time.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             } else {
-                androidx.compose.foundation.text.selection.SelectionContainer {
+                SelectionContainer {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(uiState.liveTranscriptSegments) { segment ->
-                            TranscriptSegmentItem(segment = segment)
+                            LiveTranscriptBubble(segment = segment)
                         }
                     }
                 }
@@ -379,27 +471,49 @@ fun RecordingActiveView(
 }
 
 @Composable
-fun TranscriptSegmentItem(segment: TranscriptSegment) {
-    val isUnclear = segment.isUnclear
-    val text = segment.text
-    
-    Row(
+fun LiveTranscriptBubble(segment: TranscriptSegment) {
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Text(
-            text = segment.formatTimestamp(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = if (isUnclear) "[unclear]" else text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
-            fontStyle = if (isUnclear) FontStyle.Italic else FontStyle.Normal
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                ) {
+                    Text(
+                        text = segment.formatTimestamp(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = if (segment.isUnclear) "[unclear]" else segment.text,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (segment.isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
+                fontStyle = if (segment.isUnclear) FontStyle.Italic else FontStyle.Normal,
+                lineHeight = 22.sp
+            )
+        }
     }
 }
 
