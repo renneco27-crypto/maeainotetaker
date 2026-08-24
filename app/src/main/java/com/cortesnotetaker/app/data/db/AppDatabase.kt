@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
 import com.cortesnotetaker.app.data.db.dao.NoteDao
 import com.cortesnotetaker.app.data.db.dao.SegmentDao
 import com.cortesnotetaker.app.data.db.entity.NoteEntity
@@ -15,7 +14,6 @@ import com.cortesnotetaker.app.data.db.entity.SegmentEntity
     version = 1,
     exportSchema = false
 )
-@TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun segmentDao(): SegmentDao
@@ -37,12 +35,4 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
     }
-}
-
-class Converters {
-    @androidx.room.TypeConverter
-    fun fromTimestamp(value: Long?): Long = value ?: 0L
-
-    @androidx.room.TypeConverter
-    fun toTimestamp(value: Long): Long = value
 }
