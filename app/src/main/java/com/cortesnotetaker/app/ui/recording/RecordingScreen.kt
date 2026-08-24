@@ -110,7 +110,7 @@ fun RecordingScreen(
     
     LaunchedEffect(uiState.isRecording, stopRequested) {
         if (!uiState.isRecording && !showSubjectInput && stopRequested) {
-            viewModel.stopRecording { noteId ->
+            viewModel.stopRecording(context) { noteId ->
                 onRecordingComplete(noteId)
             }
             stopRequested = false
