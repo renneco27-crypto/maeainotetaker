@@ -2,19 +2,9 @@ plugins {
     id("com.android.asset-pack")
 }
 
-android {
-    namespace = "com.cortesnotetaker.app.whispermodelpack"
-    compileSdk = 35
-
-    assetPack {
-        packName = "whisperModelPack"
-        dynamicDelivery {
-            // Install-time delivery for offline-first app
-            deliveryType = "install-time"
-        }
+assetPack {
+    packName.set("whisperModelPack")
+    dynamicDelivery {
+        deliveryType.set(com.android.build.api.dsl.DeliveryType.INSTALL_TIME)
     }
-}
-
-dependencies {
-    // No dependencies needed - this is just an asset pack
 }

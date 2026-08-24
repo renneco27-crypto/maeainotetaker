@@ -14,4 +14,3 @@ dependencyResolutionManagement {
 }
 rootProject.name = "LecturePal"
 include(":app")
-include(":whisperModelPack")
