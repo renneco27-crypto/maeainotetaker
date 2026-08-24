@@ -9,8 +9,11 @@ import com.cortesnotetaker.app.data.db.entity.NoteEntity
 import com.cortesnotetaker.app.data.db.entity.SegmentEntity
 import com.cortesnotetaker.app.data.repository.NoteRepository
 import com.cortesnotetaker.app.data.repository.SegmentRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class NoteDetailViewModel(
@@ -31,11 +34,20 @@ class NoteDetailViewModel(
             return NoteDetailViewModel(noteId, noteRepository, segmentRepository, context) as T
         }
     }
+
+    data class NoteDetailUiState(
+        val note: NoteEntity? = null,
+        val segments: List<SegmentEntity> = emptyList(),
+        val currentPlaybackPositionMs: Long = 0L,
+        val activeSegmentIndex: Int = -1,
+        val isPlaying: Boolean = false
+    )
+
     private val _uiState = MutableStateFlow(NoteDetailUiState())
-    val uiState: StateFlow<NoteDetailUiState> = _uiState
+    val uiState: StateFlow<NoteDetailUiState> = _uiState.asStateFlow()
 
     private val audioPlayback = AudioPlaybackManager(context)
-    private var playbackPositionJob: kotlinx.coroutines.Job? = null
+    private var playbackPositionJob: Job? = null
 
     init {
         loadNote()
@@ -45,12 +57,12 @@ class NoteDetailViewModel(
         viewModelScope.launch {
             val note = noteRepository.getNoteById(noteId)
             note?.let {
-                _uiState.update { it.copy(note = it) }
+                _uiState.update { current -> current.copy(note = it) }
                 audioPlayback.loadAudio(it.audioFilePath)
             }
             
             segmentRepository.getSegmentsForNote(noteId).collect { segments ->
-                _uiState.update { it.copy(segments = segments) }
+                _uiState.update { current -> current.copy(segments = segments) }
             }
         }
     }
@@ -80,7 +92,7 @@ class NoteDetailViewModel(
     private fun startPositionUpdates() {
         playbackPositionJob?.cancel()
         playbackPositionJob = viewModelScope.launch {
-            audioPlayback.positionFlow.consumeEach { position ->
+            audioPlayback.positionFlow.collect { position ->
                 _uiState.update { it.copy(currentPlaybackPositionMs = position) }
                 updateActiveSegment(position)
             }
@@ -145,12 +157,4 @@ class NoteDetailViewModel(
         audioPlayback.release()
         super.onCleared()
     }
-
-    data class NoteDetailUiState(
-        val note: NoteEntity? = null,
-        val segments: List<SegmentEntity> = emptyList(),
-        val currentPlaybackPositionMs: Long = 0L,
-        val activeSegmentIndex: Int = -1,
-        val isPlaying: Boolean = false
-    )
 }

@@ -1,6 +1,7 @@
 [versions]
 agp = "8.10.0"
 kotlin = "2.1.0"
+ksp = "2.1.0-1.0.29"
 compose-bom = "2024.12.01"
 room = "2.6.1"
 media3 = "1.5.1"
@@ -95,4 +96,4 @@ androidx-test-runner = { module = "androidx.test:runner", version = "1.5.2" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
