@@ -106,17 +106,6 @@ fun RecordingScreen(
         }
     }
 
-    var stopRequested by remember { mutableStateOf(false) }
-    
-    LaunchedEffect(uiState.isRecording, stopRequested) {
-        if (!uiState.isRecording && !showSubjectInput && stopRequested) {
-            viewModel.stopRecording(context) { noteId ->
-                onRecordingComplete(noteId)
-            }
-            stopRequested = false
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -149,7 +138,6 @@ fun RecordingScreen(
                     onPause = { viewModel.pauseRecording(context) },
                     onResume = { viewModel.resumeRecording(context) },
                     onStop = {
-                        stopRequested = true
                         viewModel.stopRecording(context) { noteId ->
                             onRecordingComplete(noteId)
                         }

@@ -68,7 +68,10 @@ class RecordingViewModel(
         }
     }
 
+    private var isSaving = false
+
     fun startRecording(context: android.content.Context, subject: String) {
+        isSaving = false
         _uiState.update { it.copy(subject = subject, isRecording = true, isPaused = false, error = null, liveTranscriptSegments = emptyList(), elapsedTimeMs = 0L) }
         val intent = Intent(context, RecordingService::class.java).apply {
             action = RecordingService.ACTION_START
@@ -101,6 +104,8 @@ class RecordingViewModel(
     }
 
     fun stopRecording(context: android.content.Context, onComplete: (Long) -> Unit) {
+        if (isSaving) return
+        isSaving = true
         stopElapsedTimer()
         val intent = Intent(context, RecordingService::class.java).apply {
             action = RecordingService.ACTION_STOP
@@ -121,8 +126,8 @@ class RecordingViewModel(
 
         viewModelScope.launch {
             val noteId = noteRepository.insert(note)
-            currentState.liveTranscriptSegments.forEach { segment ->
-                segmentRepository.insert(
+            if (currentState.liveTranscriptSegments.isNotEmpty()) {
+                val entities = currentState.liveTranscriptSegments.map { segment ->
                     SegmentEntity(
                         noteId = noteId,
                         startMs = segment.startMs,
@@ -134,7 +139,8 @@ class RecordingViewModel(
                         speakerLabel = segment.speakerLabel,
                         createdAt = segment.timestamp
                     )
-                )
+                }
+                segmentRepository.insertAll(entities)
             }
             onComplete(noteId)
         }
