@@ -140,17 +140,17 @@ fun RecordingScreen(
                     onSubjectChange = { subject = it },
                     onStartRecording = {
                         showSubjectInput = false
-                        viewModel.startRecording(subject)
+                        viewModel.startRecording(context, subject)
                     }
                 )
             } else {
                 RecordingActiveView(
                     uiState = uiState,
-                    onPause = { viewModel.pauseRecording() },
-                    onResume = { viewModel.resumeRecording() },
+                    onPause = { viewModel.pauseRecording(context) },
+                    onResume = { viewModel.resumeRecording(context) },
                     onStop = {
                         stopRequested = true
-                        viewModel.stopRecording { noteId ->
+                        viewModel.stopRecording(context) { noteId ->
                             onRecordingComplete(noteId)
                         }
                     }
@@ -373,14 +373,16 @@ fun RecordingActiveView(
                     )
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(uiState.liveTranscriptSegments) { segment ->
-                        TranscriptSegmentItem(segment = segment)
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(uiState.liveTranscriptSegments) { segment ->
+                            TranscriptSegmentItem(segment = segment)
+                        }
                     }
                 }
             }

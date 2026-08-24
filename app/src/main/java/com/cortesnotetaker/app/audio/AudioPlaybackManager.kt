@@ -28,6 +28,9 @@ class AudioPlaybackManager(private val context: Context) {
     private val _positionFlow = MutableStateFlow(0L)
     val positionFlow: StateFlow<Long> = _positionFlow.asStateFlow()
 
+    private val _durationFlow = MutableStateFlow(0L)
+    val durationFlow: StateFlow<Long> = _durationFlow.asStateFlow()
+
     fun loadAudio(filePath: String) {
         release()
         if (filePath.isBlank()) {
@@ -52,10 +55,18 @@ class AudioPlaybackManager(private val context: Context) {
                     when (state) {
                         Player.STATE_IDLE -> _playbackState.value = PlaybackState.Idle
                         Player.STATE_BUFFERING -> _playbackState.value = PlaybackState.Buffering
-                        Player.STATE_READY -> _playbackState.value = PlaybackState.Ready
+                        Player.STATE_READY -> {
+                            _playbackState.value = PlaybackState.Ready
+                            val d = duration.coerceAtLeast(0L)
+                            if (d > 0) _durationFlow.value = d
+                        }
                         Player.STATE_ENDED -> {
                             _playbackState.value = PlaybackState.Ended
-                            _positionFlow.value = duration.coerceAtLeast(0L)
+                            val d = if (duration > 0) duration else _durationFlow.value
+                            if (d > 0) {
+                                _durationFlow.value = d
+                                _positionFlow.value = d
+                            }
                             stopPositionUpdates()
                         }
                     }
@@ -81,6 +92,7 @@ class AudioPlaybackManager(private val context: Context) {
         exoPlayer?.let { player ->
             if (player.playbackState == Player.STATE_ENDED) {
                 player.seekTo(0)
+                _positionFlow.value = 0L
             }
             player.play()
         }
@@ -93,13 +105,18 @@ class AudioPlaybackManager(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        exoPlayer?.seekTo(positionMs)
-        _positionFlow.value = positionMs
+        val d = getDuration()
+        val target = if (d > 0) positionMs.coerceIn(0L, d) else positionMs
+        exoPlayer?.seekTo(target)
+        _positionFlow.value = target
     }
 
     fun getCurrentPosition(): Long = exoPlayer?.currentPosition ?: 0L
 
-    fun getDuration(): Long = exoPlayer?.duration ?: 0L
+    fun getDuration(): Long {
+        val d = exoPlayer?.duration ?: 0L
+        return if (d > 0) d else _durationFlow.value
+    }
 
     fun isPlaying(): Boolean = exoPlayer?.isPlaying == true
 

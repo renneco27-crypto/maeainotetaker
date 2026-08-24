@@ -42,15 +42,18 @@ class RecordingViewModel(
     private var timerJob: Job? = null
     private var transcriptCollectionJob: Job? = null
 
+    init {
+        observeTranscripts()
+    }
+
     fun setService(service: RecordingService) {
         recordingService = service
-        observeTranscripts()
     }
 
     private fun observeTranscripts() {
         transcriptCollectionJob?.cancel()
         transcriptCollectionJob = viewModelScope.launch {
-            recordingService?.transcriptSharedFlow?.collect { segment ->
+            RecordingService.transcriptSharedFlow.collect { segment ->
                 _uiState.update { current ->
                     current.copy(liveTranscriptSegments = current.liveTranscriptSegments + segment)
                 }
@@ -58,48 +61,44 @@ class RecordingViewModel(
         }
     }
 
-    fun startRecording(subject: String) {
-        _uiState.update { it.copy(subject = subject, isRecording = true, isPaused = false, error = null) }
-        recordingService?.let { service ->
-            val intent = Intent(service, RecordingService::class.java).apply {
-                action = RecordingService.ACTION_START
-                putExtra(RecordingService.EXTRA_SUBJECT, subject)
-            }
-            service.startService(intent)
+    fun startRecording(context: android.content.Context, subject: String) {
+        _uiState.update { it.copy(subject = subject, isRecording = true, isPaused = false, error = null, liveTranscriptSegments = emptyList(), elapsedTimeMs = 0L) }
+        val intent = Intent(context, RecordingService::class.java).apply {
+            action = RecordingService.ACTION_START
+            putExtra(RecordingService.EXTRA_SUBJECT, subject)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
         }
         startElapsedTimer()
     }
 
-    fun pauseRecording() {
-        recordingService?.let { service ->
-            val intent = Intent(service, RecordingService::class.java).apply {
-                action = RecordingService.ACTION_PAUSE
-            }
-            service.startService(intent)
+    fun pauseRecording(context: android.content.Context) {
+        val intent = Intent(context, RecordingService::class.java).apply {
+            action = RecordingService.ACTION_PAUSE
         }
+        context.startService(intent)
         _uiState.update { it.copy(isPaused = true) }
         stopElapsedTimer()
     }
 
-    fun resumeRecording() {
-        recordingService?.let { service ->
-            val intent = Intent(service, RecordingService::class.java).apply {
-                action = RecordingService.ACTION_RESUME
-            }
-            service.startService(intent)
+    fun resumeRecording(context: android.content.Context) {
+        val intent = Intent(context, RecordingService::class.java).apply {
+            action = RecordingService.ACTION_RESUME
         }
+        context.startService(intent)
         _uiState.update { it.copy(isPaused = false) }
         startElapsedTimer()
     }
 
-    fun stopRecording(onComplete: (Long) -> Unit) {
+    fun stopRecording(context: android.content.Context, onComplete: (Long) -> Unit) {
         stopElapsedTimer()
-        recordingService?.let { service ->
-            val intent = Intent(service, RecordingService::class.java).apply {
-                action = RecordingService.ACTION_STOP
-            }
-            service.startService(intent)
+        val intent = Intent(context, RecordingService::class.java).apply {
+            action = RecordingService.ACTION_STOP
         }
+        context.startService(intent)
 
         val currentState = _uiState.value
         val audioPath = recordingService?.getCurrentAudioPath() ?: ""

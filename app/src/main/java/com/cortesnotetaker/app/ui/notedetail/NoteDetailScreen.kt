@@ -176,8 +176,8 @@ fun AudioPlayerView(
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit
 ) {
-    val duration = uiState.note?.durationMs ?: 0L
-    val currentPosition = uiState.currentPlaybackPositionMs
+    val duration = if (uiState.totalDurationMs > 0) uiState.totalDurationMs else (uiState.note?.durationMs ?: 0L)
+    val currentPosition = uiState.currentPlaybackPositionMs.coerceIn(0L, if (duration > 0) duration else Long.MAX_VALUE)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -243,32 +243,34 @@ fun TranscriptList(
     onSaveEdit: () -> Unit,
     onCancelEdit: () -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(segments) { segment ->
-            Card(
-                onClick = { onSegmentClick(segment) },
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (segments.indexOf(segment) == activeSegmentIndex)
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-                    else MaterialTheme.colorScheme.surface
-                )
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "${segment.startMs / 1000}s",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
+    androidx.compose.foundation.text.selection.SelectionContainer {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(segments) { segment ->
+                Card(
+                    onClick = { onSegmentClick(segment) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (segments.indexOf(segment) == activeSegmentIndex)
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        else MaterialTheme.colorScheme.surface
                     )
-                    Text(
-                        text = if (segment.isUnclear) "[unclear]" else segment.displayTranscript,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (segment.isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
-                        fontStyle = if (segment.isUnclear) FontStyle.Italic else FontStyle.Normal
-                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "${segment.startMs / 1000}s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = if (segment.isUnclear) "[unclear]" else segment.displayTranscript,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (segment.isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
+                            fontStyle = if (segment.isUnclear) FontStyle.Italic else FontStyle.Normal
+                        )
+                    }
                 }
             }
         }

@@ -50,10 +50,6 @@ class RecordingService : Service() {
     private var recordingStartTime: Long = 0
     private var pausedTime: Long = 0
     private var isPaused = false
-    
-    // SharedFlow for transcript segments
-    private val transcriptFlow = MutableSharedFlow<TranscriptSegment>(extraBufferCapacity = 100)
-    val transcriptSharedFlow: SharedFlow<TranscriptSegment> = transcriptFlow
 
     override fun onCreate() {
         super.onCreate()
@@ -140,7 +136,7 @@ class RecordingService : Service() {
                                     confidenceScore = whisperResult.avgLogProb,
                                     timestamp = System.currentTimeMillis()
                                 )
-                                transcriptFlow.tryEmit(transcriptSegment)
+                                transcriptSharedFlow.emit(transcriptSegment)
                             }
                         }
                     }
@@ -241,7 +237,6 @@ class RecordingService : Service() {
         pipelineJob?.cancel()
         serviceScope.cancel()
         audioCapture.stop()
-        mediaRecorder.stop()
         vadDetector.release()
         whisperEngine.release()
         super.onDestroy()
@@ -252,6 +247,8 @@ class RecordingService : Service() {
     }
 
     companion object {
+        val transcriptSharedFlow = MutableSharedFlow<TranscriptSegment>(replay = 50, extraBufferCapacity = 100)
+
         const val ACTION_START = "com.cortesnotetaker.app.START_RECORDING"
         const val ACTION_PAUSE = "com.cortesnotetaker.app.PAUSE_RECORDING"
         const val ACTION_RESUME = "com.cortesnotetaker.app.RESUME_RECORDING"

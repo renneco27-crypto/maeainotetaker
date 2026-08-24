@@ -39,6 +39,7 @@ class NoteDetailViewModel(
         val note: NoteEntity? = null,
         val segments: List<SegmentEntity> = emptyList(),
         val currentPlaybackPositionMs: Long = 0L,
+        val totalDurationMs: Long = 0L,
         val activeSegmentIndex: Int = -1,
         val isPlaying: Boolean = false
     )
@@ -59,7 +60,8 @@ class NoteDetailViewModel(
             audioPlayback.playbackStateFlow.collect { state ->
                 when (state) {
                     is AudioPlaybackManager.PlaybackState.Ended -> {
-                        _uiState.update { it.copy(isPlaying = false) }
+                        val finalDuration = if (_uiState.value.totalDurationMs > 0) _uiState.value.totalDurationMs else (_uiState.value.note?.durationMs ?: 0L)
+                        _uiState.update { it.copy(isPlaying = false, currentPlaybackPositionMs = finalDuration) }
                         stopPositionUpdates()
                     }
                     is AudioPlaybackManager.PlaybackState.Error -> {
@@ -70,13 +72,20 @@ class NoteDetailViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            audioPlayback.durationFlow.collect { duration ->
+                if (duration > 0) {
+                    _uiState.update { it.copy(totalDurationMs = duration) }
+                }
+            }
+        }
     }
 
     private fun loadNote() {
         viewModelScope.launch {
             val note = noteRepository.getNoteById(noteId)
             note?.let {
-                _uiState.update { current -> current.copy(note = it) }
+                _uiState.update { current -> current.copy(note = it, totalDurationMs = it.durationMs) }
                 audioPlayback.loadAudio(it.audioFilePath)
             }
             
