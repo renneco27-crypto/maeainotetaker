@@ -1,11 +1,9 @@
 package com.cortesnotetaker.app.ui.notelist
 
-import android.os.Bundle
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,6 +11,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -21,14 +25,12 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,21 +38,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.cortesnotetaker.app.ui.theme.LecturePalColors
-import com.cortesnotetaker.app.ui.theme.LecturePalTheme
+import com.cortesnotetaker.app.data.db.entity.NoteEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteListScreen(
     onNewRecording: () -> Unit,
+    onNoteClick: (Long) -> Unit = {},
     viewModel: NoteListViewModel = viewModel()
 ) {
     val notes by viewModel.notes.collectAsStateWithLifecycle()
@@ -60,13 +63,32 @@ fun NoteListScreen(
     Scaffold(
         topBar = {
             if (showSearch) {
-                SearchBar(
-                    searchText = searchText,
-                    onSearchTextChange = { text ->
-                        searchText = text
-                        viewModel.search(text)
+                TopAppBar(
+                    title = {
+                        OutlinedTextField(
+                            value = searchText,
+                            onValueChange = { text ->
+                                searchText = text
+                                viewModel.search(text)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Search notes...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    showSearch = false
+                                    searchText = ""
+                                    viewModel.search("")
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Close")
+                                }
+                            },
+                            singleLine = true
+                        )
                     },
-                    onClose = { showSearch = false }
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
             } else {
                 TopAppBar(
@@ -96,17 +118,21 @@ fun NoteListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .padding(horizontal = 16.dp)
         ) {
             if (notes.isEmpty()) {
                 EmptyState(onNewRecording = onNewRecording)
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = innerPadding,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(notes) { note ->
-                        NoteCard(note = note, onDelete = { viewModel.deleteNote(note.id) })
+                    items(notes, key = { it.id }) { note ->
+                        NoteCard(
+                            note = note,
+                            onClick = { onNoteClick(note.id) },
+                            onDelete = { viewModel.deleteNote(note.id) }
+                        )
                     }
                 }
             }
@@ -115,82 +141,77 @@ fun NoteListScreen(
 }
 
 @Composable
-fun SearchBar(
-    searchText: String,
-    onSearchTextChange: (String) -> Unit,
-    onClose: () -> Unit
-) {
-    androidx.compose.material3.TextField(
-        value = searchText,
-        onValueChange = onSearchTextChange,
-        modifier = Modifier.fillMaxWidth(),
-        placeholder = { Text("Search notes...") },
-        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-        trailingIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") } },
-        singleLine = true
-    )
-}
-
-@Composable
 fun NoteCard(
-    note: com.cortesnotetaker.app.data.db.entity.NoteEntity,
+    note: NoteEntity,
+    onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy • HH:mm", Locale.getDefault()) }
-    val durationFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
     
     Card(
         modifier = Modifier.fillMaxWidth(),
-        onClick = { /* TODO: navigate to detail */ },
+        onClick = onClick,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
         ),
         shape = RoundedCornerShape(16.dp)
     ) {
-        androidx.compose.foundation.layout.Box(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = note.title.ifBlank { "Untitled" },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = androidx.compose.ui.text.TextOverflow.Ellipsis
-                    )
-                    if (note.subject != null && note.subject.isNotBlank()) {
-                        androidx.compose.material3.Chip(
-                            modifier = Modifier.wrapContentSize(),
-                            onClick = { /* Do nothing - just for display */ }
-                        ) {
-                            Text(note.subject!!, style = MaterialTheme.typography.labelSmall)
-                        }
+                Text(
+                    text = note.title.ifBlank { "Untitled Note" },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                note.subject?.let { subj ->
+                    if (subj.isNotBlank()) {
+                        SuggestionChip(
+                            onClick = { },
+                            label = { Text(subj, style = MaterialTheme.typography.labelSmall) }
+                        )
                     }
                 }
-                
+            }
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = dateFormat.format(Date(note.createdAt)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        text = dateFormat.format(Date(note.createdAt)),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                     Text(
                         text = formatDuration(note.durationMs),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -207,11 +228,11 @@ fun EmptyState(onNewRecording: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            androidx.compose.material3.Icon(
-                imageVector = androidx.compose.material.icons.filled.Mic,
-                contentDescription = "",
+            Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                size = 96.dp
+                modifier = Modifier.size(72.dp)
             )
             Text(
                 text = "No recordings yet",
@@ -219,23 +240,14 @@ fun EmptyState(onNewRecording: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Tap the microphone button to start recording a lecture",
+                text = "Tap Start Recording to record and transcribe a lecture",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.TextAlign.Center
+                textAlign = TextAlign.Center
             )
             Button(onClick = onNewRecording) {
                 Text("Start Recording")
             }
         }
     }
-}
-
-fun formatDuration(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds)
-    else String.format("%02d:%02d", minutes, seconds)
 }

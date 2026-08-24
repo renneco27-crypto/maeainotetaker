@@ -1,13 +1,9 @@
 package com.cortesnotetaker.app.stt
 
 import android.content.Context
-import android.content.res.AssetManager
 import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.ReceiveChannel
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -16,8 +12,6 @@ class WhisperEngine {
     private var nativeContext: Long = 0
     private var isInitialized = false
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
-    
-    // For Play Asset Delivery / sideload fallback
     private var modelPath: String? = null
 
     external fun nativeInit(modelPath: String): Long
@@ -32,11 +26,11 @@ class WhisperEngine {
 
     suspend fun initialize(context: Context): Boolean {
         return withContext(dispatcher) {
-            if (isInitialized) return@withContext true
+            if (isInitialized && nativeContext != 0L) return@withContext true
             
             modelPath = getModelPath(context)
             if (modelPath == null) {
-                Log.e("WhisperEngine", "Model not found")
+                Log.e("WhisperEngine", "Whisper model not found in assets or storage")
                 return@withContext false
             }
             
@@ -44,45 +38,20 @@ class WhisperEngine {
             isInitialized = nativeContext != 0L
             
             if (isInitialized) {
-                Log.d("WhisperEngine", "Initialized with model: $modelPath")
+                Log.d("WhisperEngine", "Whisper initialized successfully with model: $modelPath")
             } else {
-                Log.e("WhisperEngine", "Failed to initialize native context")
+                Log.e("WhisperEngine", "Failed to initialize native whisper context")
             }
             isInitialized
         }
     }
 
     private fun getModelPath(context: Context): String? {
-        // Try Play Asset Delivery first
-        try {
-            val assetPackManager = com.google.android.play.assetdelivery.AssetPackManagerFactory.create(context)
-            val assetPackName = "whisperModelPack"
-            val request = com.google.android.play.assetdelivery.AssetPackManager.RequestInfo().apply {
-                assetPackName
-            }
-            // Check if asset pack is available
-            val assetPackStates = assetPackManager.getPackStates(listOf(assetPackName)).await()
-            val state = assetPackStates[assetPackName]
-            if (state != null && state.status() == com.google.android.play.assetdelivery.AssetPackState.STATUS_COMPLETED) {
-                val assets = assetPackManager.getAssets(assetPackName)
-                val asset = assets.getAsset("whisper/ggml-base.bin")
-                val file = File(asset.getAssetFileDescriptor().getFileDescriptor())
-                if (file.exists()) {
-                    return file.absolutePath
-                }
-            }
-        } catch (e: Exception) {
-            // Asset delivery not available or failed, fall back to assets/
-            Log.d("WhisperEngine", "Asset delivery not available: ${e.message}")
-        }
-
-        // Fallback: copy from assets/ (for sideload APK)
         val modelFile = File(context.filesDir, "ggml-base.bin")
-        if (modelFile.exists()) {
+        if (modelFile.exists() && modelFile.length() > 10000000L) {
             return modelFile.absolutePath
         }
         
-        // Copy from assets
         return copyModelFromAssets(context, modelFile)
     }
 
@@ -104,21 +73,15 @@ class WhisperEngine {
     suspend fun transcribe(pcmData: ShortArray, language: String = "auto"): WhisperResult? {
         return withContext(dispatcher) {
             if (!isInitialized || nativeContext == 0L) {
-                Log.e("WhisperEngine", "Not initialized")
+                Log.e("WhisperEngine", "Whisper not initialized")
                 return@withContext null
             }
             
-            // Convert ShortArray to FloatArray (normalized)
-            val floatData = pcmData.map { it.toFloat() / 32768f }.toFloatArray()
-            
+            val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
             val result = nativeTranscribe(floatData, language)
             
-            if (result != null) {
-                // Check confidence
-                if (result.avgLogProb < -1.0f) {
-                    // Low confidence - mark as unclear in the text
-                    result.text = if (result.text.isNotBlank()) "[unclear]" else "[unclear]"
-                }
+            if (result != null && result.avgLogProb < -1.0f) {
+                result.text = if (result.text.isNotBlank()) "[unclear]" else ""
             }
             
             result
@@ -130,9 +93,9 @@ class WhisperEngine {
             nativeRelease()
             nativeContext = 0
             isInitialized = false
-            Log.d("WhisperEngine", "Released")
+            Log.d("WhisperEngine", "Whisper native engine released")
         }
     }
 
-    fun isReady(): Boolean = isInitialized
+    fun isReady(): Boolean = isInitialized && nativeContext != 0L
 }

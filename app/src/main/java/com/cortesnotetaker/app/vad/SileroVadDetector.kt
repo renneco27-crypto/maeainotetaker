@@ -1,10 +1,10 @@
 package com.cortesnotetaker.app.vad
 
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
-import com.microsoft.onnxruntime.OnnxTensor
-import com.microsoft.onnxruntime.OrtEnvironment
-import com.microsoft.onnxruntime.OrtSession
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import java.io.File
@@ -45,9 +45,9 @@ class SileroVadDetector(private val context: Context) {
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
             }
             ortSession = ortEnvironment?.createSession(modelPath, sessionOptions)
-            Log.d("SileroVAD", "Model loaded from: $modelPath")
+            Log.d("SileroVAD", "Model loaded successfully from: $modelPath")
         } catch (e: Exception) {
-            Log.e("SileroVAD", "Failed to initialize model", e)
+            Log.e("SileroVAD", "Failed to initialize Silero VAD model", e)
         }
     }
 
@@ -65,18 +65,9 @@ class SileroVadDetector(private val context: Context) {
         return modelFile.absolutePath
     }
 
-    fun processFrame(pcmFrame: ShortArray): SpeechSegment? {
-        if (ortSession == null) return null
-        
-        // Convert ShortArray to FloatArray (normalized to -1.0 to 1.0)
-        val floatFrame = FloatArray(pcmFrame.size) { i -> pcmFrame[i] / 32768f }
-        
-        // Silero expects 512 samples (32ms at 16kHz)
-        if (floatFrame.size != 512) {
-            return processPaddedFrame(floatFrame, pcmFrame)
-        }
-        
-        return runInference(floatFrame, pcmFrame)
+    fun processPcmFrame(pcmData: ShortArray): SpeechSegment? {
+        val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
+        return processPaddedFrame(floatData, pcmData)
     }
 
     private fun processPaddedFrame(input: FloatArray, originalPcm: ShortArray): SpeechSegment? {
@@ -145,10 +136,9 @@ class SileroVadDetector(private val context: Context) {
         val currentTimeMs = System.currentTimeMillis()
         
         if (prob > SPEECH_THRESHOLD) {
-            // Speech detected
             if (!isInSpeech) {
                 isInSpeech = true
-                accumulatedSpeechStartMs = currentTimeMs - (FRAME_DURATION_MS * 2) // Approximate start
+                accumulatedSpeechStartMs = currentTimeMs - (FRAME_DURATION_MS * 2)
                 accumulatedSpeechFrames.clear()
             }
             isInSpeech = true
@@ -156,11 +146,9 @@ class SileroVadDetector(private val context: Context) {
             accumulatedSpeechFrames.addAll(pcmFrame.toList())
             
         } else if (prob < SILENCE_THRESHOLD && isInSpeech) {
-            // Silence detected after speech - check if we should emit
             val speechDuration = currentTimeMs - accumulatedSpeechStartMs
             
-            if (speechDuration >= MIN_SPEECH_DURATION_MS || speechDuration >= MAX_SPEECH_DURATION_MS) {
-                // Emit segment
+            if (speechDuration >= MIN_SPEECH_DURATION_MS) {
                 val pcmData = accumulatedSpeechFrames.toShortArray()
                 val segment = SpeechSegment(pcmData, accumulatedSpeechStartMs, currentTimeMs)
                 accumulatedSpeechFrames.clear()
@@ -168,12 +156,10 @@ class SileroVadDetector(private val context: Context) {
                 speechSegmentChannel.trySend(segment)
                 return segment
             }
-            // Too short, discard
             accumulatedSpeechFrames.clear()
             isInSpeech = false
         }
         
-        // Check max duration
         if (isInSpeech && (currentTimeMs - accumulatedSpeechStartMs) >= MAX_SPEECH_DURATION_MS) {
             val pcmData = accumulatedSpeechFrames.toShortArray()
             val segment = SpeechSegment(pcmData, accumulatedSpeechStartMs, currentTimeMs)
@@ -187,8 +173,7 @@ class SileroVadDetector(private val context: Context) {
     }
 
     fun reset() {
-        hState = FloatArray(2 * 1 * 128)
-        cState = FloatArray(2 * 1 * 128)
+        state = FloatArray(2 * 1 * 128)
         accumulatedSpeechFrames.clear()
         isInSpeech = false
     }

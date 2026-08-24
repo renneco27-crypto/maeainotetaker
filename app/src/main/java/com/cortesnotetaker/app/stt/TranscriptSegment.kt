@@ -1,8 +1,5 @@
 package com.cortesnotetaker.app.stt
 
-import kotlinx.serialization.Serializable
-
-@Serializable
 data class TranscriptSegment(
     val id: Long = 0L,
     val noteId: Long = 0L,

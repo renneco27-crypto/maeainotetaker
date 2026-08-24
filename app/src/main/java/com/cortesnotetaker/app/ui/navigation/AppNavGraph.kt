@@ -1,33 +1,34 @@
 package com.cortesnotetaker.app.ui.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.cortesnotetaker.app.ui.notedetail.NoteDetailScreen
 import com.cortesnotetaker.app.ui.notelist.NoteListScreen
 import com.cortesnotetaker.app.ui.recording.RecordingScreen
-import com.cortesnotetaker.app.ui.notedetail.NoteDetailScreen
 
 @Composable
 fun AppNavHost(navController: NavHostController, startDestination: String = "note_list") {
-    NavHost(navController, startDestination) {
+    NavHost(navController = navController, startDestination = startDestination) {
         composable("note_list") {
-            NoteListScreen(onNewRecording = {
-                navController.navigate("recording") {
-                    popUpTo("note_list") { inclusive = true }
+            NoteListScreen(
+                onNewRecording = {
+                    navController.navigate("recording")
+                },
+                onNoteClick = { noteId ->
+                    navController.navigate("note_detail/$noteId")
                 }
-            })
+            )
         }
         
         composable("recording") {
             RecordingScreen(onRecordingComplete = { noteId ->
                 navController.navigate("note_detail/$noteId") {
-                    popUpTo("note_list") { inclusive = true }
+                    popUpTo("note_list") { inclusive = false }
                 }
             })
         }
@@ -36,8 +37,11 @@ fun AppNavHost(navController: NavHostController, startDestination: String = "not
             route = "note_detail/{noteId}",
             arguments = listOf(navArgument("noteId") { type = NavType.LongType })
         ) { backStackEntry ->
-            val noteId = backStackEntry.getLong() ?: 0L
-            NoteDetailScreen(noteId = noteId)
+            val noteId = backStackEntry.arguments?.getLong("noteId") ?: 0L
+            NoteDetailScreen(
+                noteId = noteId,
+                onNavigateBack = { navController.popBackStack() }
+            )
         }
     }
 }
