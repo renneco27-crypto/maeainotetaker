@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <cmath>
 #include <android/log.h>
 #include "whisper.h"
 
@@ -51,14 +52,12 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeInit(
     wrapper->params.language = "auto";
     wrapper->params.detect_language = true;
     wrapper->params.suppress_blank = true;
-    wrapper->params.suppress_non_speech_tokens = true;
     wrapper->params.max_len = 0;
     wrapper->params.split_on_word = true;
     wrapper->params.token_timestamps = true;
     wrapper->params.thold_pt = 0.01f;
     wrapper->params.thold_ptsum = 0.01f;
     wrapper->params.max_tokens = 0;
-    wrapper->params.speed_up = false;
     wrapper->params.audio_ctx = 0;
 
     LOGD("Whisper context initialized successfully");
@@ -145,10 +144,10 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
     float avg_logprob = 0.0f;
     int total_tokens = 0;
     for (int i = 0; i < n_segments; i++) {
-        const whisper_token* tokens = whisper_full_get_token_ids(wrapper->ctx, i);
-        int n_tokens = whisper_full_get_n_tokens(wrapper->ctx, i);
+        int n_tokens = whisper_full_n_tokens(wrapper->ctx, i);
         for (int j = 0; j < n_tokens; j++) {
-            avg_logprob += whisper_full_get_token_logprob(wrapper->ctx, i, j);
+            float p = whisper_full_get_token_p(wrapper->ctx, i, j);
+            avg_logprob += (p > 0.0001f ? logf(p) : -9.21f);
             total_tokens++;
         }
     }
@@ -189,9 +188,10 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
 
         // Calculate segment avg logprob
         float seg_logprob = 0.0f;
-        int seg_tokens = whisper_full_get_n_tokens(wrapper->ctx, i);
+        int seg_tokens = whisper_full_n_tokens(wrapper->ctx, i);
         for (int j = 0; j < seg_tokens; j++) {
-            seg_logprob += whisper_full_get_token_logprob(wrapper->ctx, i, j);
+            float p = whisper_full_get_token_p(wrapper->ctx, i, j);
+            seg_logprob += (p > 0.0001f ? logf(p) : -9.21f);
         }
         if (seg_tokens > 0) {
             seg_logprob /= seg_tokens;
