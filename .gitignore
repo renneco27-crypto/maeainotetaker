@@ -1,0 +1,53 @@
+# Android / Gradle
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Keystore (never commit!)
+keystore/
+*.keystore
+*.jks
+
+# Whisper model (too large for git — use LFS or manual download)
+**/*.bin
+**/ggml-base.bin
+
+# Silero VAD model (commit this — it's only ~2 MB)
+# app/src/main/assets/silero_vad.onnx  <-- keep this line commented to allow committing
+
+# NDK / CMake build outputs
+*.so
+*.o
+*.a
+
+# graphify analysis output
+graphify-out/
+
+# Kotlin / Java
+*.class
+out/
+
+# Gradle wrapper verification
+gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ / Android Studio
+*.iws
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries
+.idea/libraries
+.idea/caches
+.idea/modules.xml
+*.log

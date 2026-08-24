@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">LecturePal</string>
+    <string name="recording_notification_title">Recording in progress</string>
+    <string name="recording_notification_pause">Pause</string>
+    <string name="recording_notification_resume">Resume</string>
+    <string name="recording_notification_stop">Stop</string>
+    <string name="permission_record_audio_rationale">This app needs microphone access to record lectures.</string>
+    <string name="permission_notification_rationale">This app needs notification permission to show recording status.</string>
+</resources>
