@@ -21,6 +21,7 @@ import com.cortesnotetaker.app.audio.MediaRecorderManager
 import com.cortesnotetaker.app.stt.TranscriptSegment
 import com.cortesnotetaker.app.stt.WhisperEngine
 import com.cortesnotetaker.app.vad.SileroVadDetector
+import com.cortesnotetaker.app.vad.SpeechSegment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -115,7 +116,7 @@ class RecordingService : Service() {
             
             updateNotification("Recording...", subject)
             
-            val speechQueue = kotlinx.coroutines.channels.Channel<com.cortesnotetaker.app.vad.SileroVadDetector.SpeechSegment>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+            val speechQueue = Channel<SpeechSegment>(Channel.UNLIMITED)
 
             // Worker 1: Real-time Audio Ingestion & VAD (non-blocking)
             launch(Dispatchers.Default) {
