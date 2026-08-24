@@ -7,6 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # whisper.cpp as subdirectory
+set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+
 add_subdirectory(whisper.cpp)
 
 # JNI bridge shared library
@@ -22,9 +27,5 @@ target_include_directories(whisper_jni PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/whisper.cpp/ggml/include
 )
 
-# ARM NEON optimizations for mid-range phones
-target_compile_options(whisper PRIVATE -O3 -DGGML_USE_ACCELERATE)
-target_compile_options(whisper_jni PRIVATE -O3 -DGGML_USE_ACCELERATE)
-
-# Disable warnings for whisper.cpp
-target_compile_options(whisper PRIVATE -Wno-unused-parameter -Wno-sign-compare -Wno-unused-variable)
+target_compile_options(whisper PRIVATE -O3 -Wno-unused-parameter -Wno-sign-compare -Wno-unused-variable)
+target_compile_options(whisper_jni PRIVATE -O3)
