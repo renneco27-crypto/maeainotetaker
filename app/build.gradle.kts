@@ -14,6 +14,7 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 val hfToken = localProperties.getProperty("HF_TOKEN") ?: ""
+val localServerUrl = localProperties.getProperty("LOCAL_SERVER_URL") ?: ""
 
 android {
     namespace = "com.cortesnotetaker.app"
@@ -27,6 +28,7 @@ android {
         versionName = "1.0.0"
         
         buildConfigField("String", "HF_TOKEN", "\"$hfToken\"")
+        buildConfigField("String", "LOCAL_SERVER_URL", "\"$localServerUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

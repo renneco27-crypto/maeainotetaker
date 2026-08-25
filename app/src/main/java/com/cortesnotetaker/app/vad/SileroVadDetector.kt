@@ -26,10 +26,13 @@ class SileroVadDetector(private val context: Context) {
     
     // Thresholds for hysteresis
     private val SPEECH_THRESHOLD = 0.35f
-    private val SILENCE_THRESHOLD = 0.15f
     private val SILENCE_HANGOVER_MS = 400L // 400ms silence before concluding speech segment
     private val MAX_SPEECH_DURATION_MS = 15000L // 15 seconds max segment
     private val MIN_SPEECH_DURATION_MS = 250L // Minimum 250ms speech for Whisper
+    
+    // Buffer to capture 320ms of audio BEFORE speech is detected (prevents cutting off the first word)
+    private val PRE_SPEECH_PAD_FRAMES = 10 
+    private val preSpeechBuffer = ArrayDeque<ShortArray>(PRE_SPEECH_PAD_FRAMES)
     
     private var silenceStartMs: Long = 0L
 
@@ -72,13 +75,15 @@ class SileroVadDetector(private val context: Context) {
     private val contextBuffer = FloatArray(CONTEXT_SIZE)
 
     fun processPcmFrame(pcmData: ShortArray): SpeechSegment? {
-        val floatData = FloatArray(pcmData.size) { i -> pcmData[i].toFloat() / 32768.0f }
+        // pcmData is 48000 Hz, size is 1536 (32ms). We must downsample to 16000 Hz (size 512).
+        val pcmData16k = ShortArray(512)
+        for (i in 0 until 512) {
+            pcmData16k[i] = pcmData[i * 3] // Simple 3:1 decimation
+        }
+
+        val floatData = FloatArray(512) { i -> pcmData16k[i].toFloat() / 32768.0f }
         val frame = FloatArray(512)
-        val copySize = minOf(floatData.size, 512)
-        System.arraycopy(floatData, 0, frame, 0, copySize)
-        
-        val pcmFrame = ShortArray(512)
-        System.arraycopy(pcmData, 0, pcmFrame, 0, copySize)
+        System.arraycopy(floatData, 0, frame, 0, 512)
 
         // Prepend 64-sample context -> 576 input samples for Silero VAD v5
         val modelInput = FloatArray(CONTEXT_SIZE + 512)
@@ -88,10 +93,11 @@ class SileroVadDetector(private val context: Context) {
         // Update context with last 64 samples of current frame
         System.arraycopy(frame, 512 - CONTEXT_SIZE, contextBuffer, 0, CONTEXT_SIZE)
 
-        return runInference(modelInput, pcmFrame)
+        // Run inference on 16kHz frame, but pass the 48kHz pcmData for high-quality accumulation!
+        return runInference(modelInput, pcmData)
     }
 
-    private fun runInference(frame: FloatArray, pcmFrame: ShortArray): SpeechSegment? {
+    private fun runInference(frame: FloatArray, pcmFrame48k: ShortArray): SpeechSegment? {
         val env = ortEnvironment ?: return null
         val session = ortSession ?: return null
         
@@ -131,7 +137,7 @@ class SileroVadDetector(private val context: Context) {
                 stateBuf.get(state)
             }
             
-            return processSpeechProbability(speechProb, pcmFrame)
+            return processSpeechProbability(speechProb, pcmFrame48k)
         } catch (e: Exception) {
             Log.e("SileroVAD", "Inference error", e)
             return null
@@ -150,14 +156,24 @@ class SileroVadDetector(private val context: Context) {
             silenceStartMs = 0L
             if (!isInSpeech) {
                 isInSpeech = true
-                accumulatedSpeechStartMs = currentTimeMs
+                accumulatedSpeechStartMs = currentTimeMs - (preSpeechBuffer.size * 32)
                 accumulatedSpeechFrames.clear()
+                
+                // Add the padding buffer so we don't cut off the first word
+                preSpeechBuffer.forEach { accumulatedSpeechFrames.addAll(it.toList()) }
+                
                 Log.d("SileroVAD", "Speech STARTED: prob=$prob")
             }
             lastSpeechEndMs = currentTimeMs
             accumulatedSpeechFrames.addAll(pcmFrame.toList())
         } else {
-            if (isInSpeech) {
+            if (!isInSpeech) {
+                // Keep a rolling buffer of silence frames to pad the start of the next speech segment
+                if (preSpeechBuffer.size >= PRE_SPEECH_PAD_FRAMES) {
+                    preSpeechBuffer.removeFirst()
+                }
+                preSpeechBuffer.addLast(pcmFrame)
+            } else {
                 accumulatedSpeechFrames.addAll(pcmFrame.toList())
                 if (silenceStartMs == 0L) {
                     silenceStartMs = currentTimeMs

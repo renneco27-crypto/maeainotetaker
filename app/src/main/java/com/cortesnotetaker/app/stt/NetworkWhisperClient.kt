@@ -13,23 +13,61 @@ import java.util.concurrent.TimeUnit
 
 class NetworkWhisperClient {
     // Official Hugging Face Serverless Inference API for Whisper Large V3 Turbo (Fast & No ZeroGPU limits!)
-    private val serverUrl = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo"
+    private val hfServerUrl = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo"
     
     // Loaded securely from local.properties -> BuildConfig
     private val hfToken = com.cortesnotetaker.app.BuildConfig.HF_TOKEN
+    private val localServerUrl = com.cortesnotetaker.app.BuildConfig.LOCAL_SERVER_URL
 
-    private val client = OkHttpClient.Builder()
+    // Standard client for Hugging Face (longer timeouts as it's cloud-based)
+    private val hfClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+        
+    // Fast fail client for Local PC (detect quickly if PC is unreachable)
+    private val localClient = OkHttpClient.Builder()
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .build()
 
     fun transcribe(pcmData: ShortArray): WhisperResult? {
+        val wavBytes = createWavBytes(pcmData, 48000)
+        
+        // 1. Try Local PC Server if configured
+        if (localServerUrl.isNotBlank()) {
+            try {
+                Log.d("NetworkWhisper", "Attempting local PC server at: $localServerUrl")
+                val request = Request.Builder()
+                    .url(localServerUrl)
+                    .addHeader("Content-Type", "audio/wav")
+                    .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
+                    .build()
+                    
+                val response = localClient.newCall(request).execute()
+                
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string() ?: ""
+                    val jsonObject = JSONObject(responseBody)
+                    val transcript = jsonObject.optString("text", "").trim()
+                    
+                    Log.d("NetworkWhisper", "Local PC Transcription success: '$transcript'")
+                    return WhisperResult(text = transcript, avgLogProb = 0.0f)
+                } else {
+                    Log.w("NetworkWhisper", "Local PC server returned error (${response.code}). Falling back to HF...")
+                }
+            } catch (e: Exception) {
+                Log.w("NetworkWhisper", "Local PC server unreachable (Timeout/Offline). Falling back to HF...")
+            }
+        }
+        
+        // 2. Fallback to Hugging Face
         try {
-            val wavBytes = createWavBytes(pcmData, 16000)
-            
+            Log.d("NetworkWhisper", "Attempting Hugging Face Serverless API")
             val requestBuilder = Request.Builder()
-                .url(serverUrl)
+                .url(hfServerUrl)
                 .addHeader("Content-Type", "audio/wav")
                 .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
                 
@@ -38,11 +76,11 @@ class NetworkWhisperClient {
             }
 
             val request = requestBuilder.build()
-            val response = client.newCall(request).execute()
+            val response = hfClient.newCall(request).execute()
             
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string()
-                Log.e("NetworkWhisper", "Inference API error (${response.code}): $errorBody")
+                Log.e("NetworkWhisper", "HF Inference API error (${response.code}): $errorBody")
                 return null
             }
 
@@ -50,7 +88,7 @@ class NetworkWhisperClient {
             val jsonObject = JSONObject(responseBody)
             val transcript = jsonObject.optString("text", "").trim()
             
-            Log.d("NetworkWhisper", "Transcription success: '$transcript'")
+            Log.d("NetworkWhisper", "HF Transcription success: '$transcript'")
             return WhisperResult(text = transcript, avgLogProb = 0.0f)
             
         } catch (e: Exception) {
