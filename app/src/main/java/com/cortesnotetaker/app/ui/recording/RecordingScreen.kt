@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
+import android.widget.Toast
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import android.net.Uri
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +33,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -61,7 +65,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -83,6 +89,7 @@ fun RecordingScreen(
     var showSubjectInput by remember { mutableStateOf(true) }
     var isBinding by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -122,6 +129,33 @@ fun RecordingScreen(
                         text = if (uiState.isRecording) (uiState.subject.ifBlank { "Live Recording" }) else "New Recording",
                         fontWeight = FontWeight.Bold 
                     ) 
+                },
+                actions = {
+                    if (uiState.liveTranscriptSegments.isNotEmpty()) {
+                        IconButton(onClick = {
+                            val fullText = uiState.liveTranscriptSegments.joinToString("\n\n") { it.text }
+                            if (fullText.isNotBlank()) {
+                                clipboardManager.setText(AnnotatedString(fullText))
+                                Toast.makeText(context, "Live transcript copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy all transcript")
+                        }
+
+                        IconButton(onClick = {
+                            val fullText = uiState.liveTranscriptSegments.joinToString("\n\n") { it.text }
+                            if (fullText.isNotBlank()) {
+                                val claudePrompt = "Please analyze this lecture transcript, summarize the core points, and generate detailed structured study notes:\n\n$fullText"
+                                clipboardManager.setText(AnnotatedString(claudePrompt))
+                                Toast.makeText(context, "Copied prompt! Opening Claude...", Toast.LENGTH_SHORT).show()
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://claude.ai/chat/"))
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            }
+                        }) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = "Send to Claude")
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface

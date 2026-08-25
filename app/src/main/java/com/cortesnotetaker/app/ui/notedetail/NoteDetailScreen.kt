@@ -1,31 +1,40 @@
 package com.cortesnotetaker.app.ui.notedetail
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -39,7 +48,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,6 +73,9 @@ fun NoteDetailScreen(
     var isEditingTitle by remember { mutableStateOf(false) }
     var editingSegmentId by remember { mutableStateOf<Long?>(null) }
     var editingTranscript by remember { mutableStateOf("") }
+
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -90,6 +104,17 @@ fun NoteDetailScreen(
                 },
                 actions = {
                     if (!isEditingTitle) {
+                        if (uiState.segments.isNotEmpty()) {
+                            IconButton(onClick = {
+                                val fullText = uiState.segments.joinToString("\n\n") { it.displayTranscript }
+                                if (fullText.isNotBlank()) {
+                                    clipboardManager.setText(AnnotatedString(fullText))
+                                    Toast.makeText(context, "Full transcript copied to clipboard", Toast.LENGTH_SHORT).show()
+                                }
+                            }) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy all transcript")
+                            }
+                        }
                         IconButton(onClick = {
                             title = uiState.note?.title ?: ""
                             isEditingTitle = true
@@ -131,6 +156,55 @@ fun NoteDetailScreen(
                 onPlayPause = { viewModel.playPause() },
                 onSeek = { viewModel.seekTo(it) }
             )
+
+            // Quick Actions (Copy to Claude & Copy All)
+            if (uiState.segments.isNotEmpty()) {
+                val fullTranscript = remember(uiState.segments) {
+                    uiState.segments.joinToString("\n\n") { it.displayTranscript }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            if (fullTranscript.isNotBlank()) {
+                                clipboardManager.setText(AnnotatedString(fullTranscript))
+                                Toast.makeText(context, "Transcript copied to clipboard", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Copy All")
+                    }
+
+                    Button(
+                        onClick = {
+                            if (fullTranscript.isNotBlank()) {
+                                val claudePrompt = "Please analyze this lecture transcript, summarize the core points, and generate detailed structured study notes:\n\n$fullTranscript"
+                                clipboardManager.setText(AnnotatedString(claudePrompt))
+                                Toast.makeText(context, "Copied prompt! Opening Claude...", Toast.LENGTH_SHORT).show()
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://claude.ai/chat/"))
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(intent)
+                            }
+                        },
+                        modifier = Modifier.weight(1.3f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Copy to Claude")
+                    }
+                }
+            }
 
             // Transcript
             if (uiState.segments.isNotEmpty()) {

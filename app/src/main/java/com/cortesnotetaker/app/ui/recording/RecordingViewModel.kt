@@ -54,8 +54,9 @@ class RecordingViewModel(
     private fun observeTranscripts() {
         transcriptCollectionJob?.cancel()
         transcriptCollectionJob = viewModelScope.launch {
+            Log.d("RecordingViewModel", "observeTranscripts: STARTING COLLECTION")
             RecordingService.transcriptSharedFlow.collect { segment ->
-                Log.d("RecordingViewModel", "UI received live segment: '${segment.text}'")
+                Log.d("RecordingViewModel", "observeTranscripts: COLLECTED segment: '${segment.text}'")
                 _uiState.update { current ->
                     val exists = current.liveTranscriptSegments.any {
                         it.startMs == segment.startMs && it.text == segment.text

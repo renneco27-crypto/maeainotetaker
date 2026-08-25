@@ -68,16 +68,48 @@ class AudioCaptureManager(private val context: Context) {
 
         try {
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
                 SAMPLE_RATE,
                 CHANNEL_CONFIG,
                 AUDIO_FORMAT,
                 bufferSize
             )
+            
+            val audioSessionId = audioRecord?.audioSessionId ?: 0
+            if (audioSessionId != 0) {
+                if (android.media.audiofx.NoiseSuppressor.isAvailable()) {
+                    android.media.audiofx.NoiseSuppressor.create(audioSessionId)?.apply {
+                        enabled = true
+                        Log.d("AudioCapture", "Hardware NoiseSuppressor enabled")
+                    }
+                }
+                if (android.media.audiofx.AutomaticGainControl.isAvailable()) {
+                    android.media.audiofx.AutomaticGainControl.create(audioSessionId)?.apply {
+                        enabled = true
+                        Log.d("AudioCapture", "Hardware AutomaticGainControl enabled")
+                    }
+                }
+            }
         } catch (e: SecurityException) {
             Log.e("AudioCapture", "Permission denied for AudioRecord", e)
             closeWavFile()
             return false
+        } catch (e: Exception) {
+            Log.e("AudioCapture", "Failed to configure AudioRecord with noise suppression: ${e.message}", e)
+            // Fallback to basic MIC if VOICE_RECOGNITION fails
+            try {
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    bufferSize
+                )
+            } catch (ex: Exception) {
+                Log.e("AudioCapture", "Fallback AudioRecord failed", ex)
+                closeWavFile()
+                return false
+            }
         }
 
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {

@@ -44,7 +44,7 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeInit(
 
     // Default parameters for transcription
     wrapper->params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    wrapper->params.n_threads = 2;
+    wrapper->params.n_threads = 4;
     wrapper->params.print_realtime = false;
     wrapper->params.print_progress = false;
     wrapper->params.print_timestamps = false;
@@ -55,18 +55,22 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeInit(
     wrapper->params.no_context = true;
     wrapper->params.single_segment = true;
     wrapper->params.no_timestamps = true;
-    wrapper->params.suppress_blank = true;
-    wrapper->params.suppress_nst = true;
+    wrapper->params.suppress_blank = false;
+    wrapper->params.suppress_nst = false;
     wrapper->params.temperature = 0.0f;
     wrapper->params.temperature_inc = 0.0f;
     wrapper->params.greedy.best_of = 1;
     wrapper->params.max_len = 0;
-    wrapper->params.split_on_word = true;
+    wrapper->params.split_on_word = false;
     wrapper->params.token_timestamps = false;
     wrapper->params.thold_pt = 0.01f;
     wrapper->params.thold_ptsum = 0.01f;
-    wrapper->params.max_tokens = 0;
+    wrapper->params.max_tokens = 64;
     wrapper->params.audio_ctx = 0;
+
+    wrapper->params.progress_callback = [](struct whisper_context * ctx, struct whisper_state * state, int progress, void * user_data) {
+        LOGD("Whisper progress: %d%%", progress);
+    };
 
     LOGD("Whisper context initialized successfully");
     return reinterpret_cast<jlong>(wrapper);
@@ -141,6 +145,7 @@ Java_com_cortesnotetaker_app_stt_WhisperEngine_nativeTranscribe(
             if (i < n_segments - 1) full_text += " ";
         }
     }
+    LOGD("Transcription text: '%s'", full_text.c_str());
 
     // Set avgLogProb field
     float avg_logprob = 0.0f;

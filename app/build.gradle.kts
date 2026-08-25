@@ -5,6 +5,16 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+import java.util.Properties
+import java.io.FileInputStream
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+val hfToken = localProperties.getProperty("HF_TOKEN") ?: ""
+
 android {
     namespace = "com.cortesnotetaker.app"
     compileSdk = 35
@@ -15,6 +25,9 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
+        
+        buildConfigField("String", "HF_TOKEN", "\"$hfToken\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -65,6 +78,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
         viewBinding = false
     }
 
@@ -138,6 +152,9 @@ dependencies {
     // Coroutines
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.core)
+
+    // Networking
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Lifecycle & ViewModel
     implementation(libs.lifecycle.runtime.ktx)

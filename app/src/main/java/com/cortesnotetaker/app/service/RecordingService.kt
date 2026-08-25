@@ -101,11 +101,10 @@ class RecordingService : Service() {
         }
 
         pipelineJob = serviceScope.launch {
-            val whisperInitialized = whisperEngine.initialize(this@RecordingService)
             val audioStarted = audioCapture.start(currentAudioPath)
             
-            if (!audioStarted || !whisperInitialized) {
-                Log.e("RecordingService", "Failed to start recording components (audio=$audioStarted, whisper=$whisperInitialized)")
+            if (!audioStarted) {
+                Log.e("RecordingService", "Failed to start audio capture")
                 stopSelf()
                 return@launch
             }
@@ -132,15 +131,16 @@ class RecordingService : Service() {
             }
 
             // Worker 2: Asynchronous Whisper Transcriber
+            val networkWhisper = com.cortesnotetaker.app.stt.NetworkWhisperClient()
             launch(Dispatchers.Default) {
                 for (segment in speechQueue) {
                     val startOffset = maxOf(0L, segment.startMs - recordingStartTime)
                     val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
                     
-                    Log.d("RecordingService", "Whisper processing segment (${segment.pcmData.size} samples)...")
-                    val result = whisperEngine.transcribe(segment.pcmData, "en")
+                    Log.d("RecordingService", "Sending segment (${segment.pcmData.size} samples) to Hugging Face server...")
+                    val result = networkWhisper.transcribe(segment.pcmData)
                     result?.let { whisperResult ->
-                        Log.d("RecordingService", "Whisper finished transcription: '${whisperResult.text}' (logprob=${whisperResult.avgLogProb})")
+                        Log.d("RecordingService", "Server finished transcription: '${whisperResult.text}'")
                         if (whisperResult.text.isNotBlank()) {
                             val transcriptSegment = TranscriptSegment(
                                 noteId = currentNoteId,
@@ -152,7 +152,10 @@ class RecordingService : Service() {
                                 timestamp = System.currentTimeMillis()
                             )
                             Log.d("RecordingService", "EMITTING transcript segment to UI: '${transcriptSegment.text}'")
+                            val subs = transcriptSharedFlow.subscriptionCount.value
+                            Log.d("RecordingService", "Current subscribers to SharedFlow: $subs")
                             transcriptSharedFlow.emit(transcriptSegment)
+                            Log.d("RecordingService", "EMISSION complete")
                         }
                     }
                 }

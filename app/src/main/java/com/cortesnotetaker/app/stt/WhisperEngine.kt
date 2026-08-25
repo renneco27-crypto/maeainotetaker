@@ -47,7 +47,7 @@ class WhisperEngine {
     }
 
     private fun getModelPath(context: Context): String? {
-        val modelFile = File(context.filesDir, "ggml-base.bin")
+        val modelFile = File(context.filesDir, "ggml-tiny.en.bin")
         if (modelFile.exists() && modelFile.length() > 10000000L) {
             return modelFile.absolutePath
         }
@@ -57,7 +57,7 @@ class WhisperEngine {
 
     private fun copyModelFromAssets(context: Context, targetFile: File): String? {
         try {
-            val inputStream = context.assets.open("whisper/ggml-base.bin")
+            val inputStream = context.assets.open("whisper/ggml-tiny.en.bin")
             val outputStream = FileOutputStream(targetFile)
             inputStream.copyTo(outputStream)
             inputStream.close()

@@ -21,13 +21,11 @@ class LecturePalApp : Application() {
             modules(allModules)
         }
 
-        // Prewarm Whisper and VAD models in background
+        // Prewarm VAD model in background
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val whisper = WhisperEngine()
-                whisper.initialize(this@LecturePalApp)
                 val vad = SileroVadDetector(this@LecturePalApp)
-                Log.d("LecturePalApp", "Pre-warmed Whisper & VAD engines successfully")
+                Log.d("LecturePalApp", "Pre-warmed VAD engine successfully")
             } catch (e: Exception) {
                 Log.e("LecturePalApp", "Pre-warming error", e)
             }
