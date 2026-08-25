@@ -1,9 +1,12 @@
 package com.cortesnotetaker.app.audio
 
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -16,6 +19,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class AudioCaptureManager(private val context: Context) {
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private var audioRecord: AudioRecord? = null
     private val bufferSize: Int by lazy {
         AudioRecord.getMinBufferSize(
@@ -123,12 +127,53 @@ class AudioCaptureManager(private val context: Context) {
             pcmChannel = Channel(Channel.UNLIMITED)
         }
 
+        enableBluetoothRouting()
+
         audioRecord?.startRecording()
         isRecording.value = true
 
         Thread(startCaptureLoop(), "AudioCaptureThread").start()
         Log.d("AudioCapture", "AudioRecord started, saving to $outputFilePath")
         return true
+    }
+
+    private fun enableBluetoothRouting() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val commDevices = audioManager?.availableCommunicationDevices ?: emptyList()
+                val btDevice = commDevices.firstOrNull { device ->
+                    device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    device.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                    device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                }
+                if (btDevice != null) {
+                    val success = audioManager?.setCommunicationDevice(btDevice) ?: false
+                    Log.d("AudioCapture", "Set communication device to ${btDevice.productName} (type=${btDevice.type}): $success")
+                }
+            } else {
+                if (audioManager?.isBluetoothScoAvailableOffCall == true) {
+                    audioManager.startBluetoothSco()
+                    audioManager.isBluetoothScoOn = true
+                    Log.d("AudioCapture", "Started legacy Bluetooth SCO")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("AudioCapture", "Could not route Bluetooth audio: ${e.message}")
+        }
+    }
+
+    private fun disableBluetoothRouting() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager?.clearCommunicationDevice()
+            } else {
+                audioManager?.stopBluetoothSco()
+                audioManager?.isBluetoothScoOn = false
+            }
+        } catch (e: Exception) {
+            Log.w("AudioCapture", "Could not clear Bluetooth audio routing: ${e.message}")
+        }
     }
 
     private fun startCaptureLoop(): Runnable {
@@ -274,6 +319,7 @@ class AudioCaptureManager(private val context: Context) {
     }
 
     private fun release() {
+        disableBluetoothRouting()
         audioRecord?.release()
         audioRecord = null
     }
