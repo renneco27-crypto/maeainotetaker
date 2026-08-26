@@ -148,8 +148,7 @@ async def process_job(job_id: str, content: bytes):
                 beam_size=5,  # Maximum accuracy (slower but checks multiple paths)
                 best_of=5,
                 temperature=0.0,
-                vad_filter=True,  # Prevent 30-second hallucination loops during silence
-                vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
+                vad_filter=False,  # Disabled VAD per user request to prevent killed sentences
                 condition_on_previous_text=True,
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
@@ -162,6 +161,9 @@ async def process_job(job_id: str, content: bytes):
             print("--------------------------------------------------")
             
             collected_segments = []
+            # Keep track of recent sentences to block 3x hallucinations
+            recent_sentences = []
+
             for segment in segments:
                 # Check if client requested cancellation
                 if jobs.get(job_id, {}).get("status") == "cancelled":
@@ -186,6 +188,18 @@ async def process_job(job_id: str, content: bytes):
                 real_words = [w for w in text_clean.split() if len(w) > 1]
                 if len(real_words) < 1:
                     print(f"  [SKIPPED {orig_start_s:.1f}s] no real words found")
+                    continue
+
+                # Check if this exact sentence has repeated 3 times in a row (Hallucination blocker)
+                recent_sentences.append(text_clean)
+                if len(recent_sentences) > 3:
+                    recent_sentences.pop(0)
+                
+                if len(recent_sentences) == 3 and recent_sentences[0] == recent_sentences[1] == recent_sentences[2]:
+                    print(f"  [SKIPPED {orig_start_s:.1f}s] blocked 3x repetition loop: {text_clean}")
+                    # Pop the last one so we don't permanently block the text if they actually said it again later,
+                    # but it breaks the immediate hallucination loop.
+                    recent_sentences.pop()
                     continue
 
                 # Exact 1:1 original audio timestamps
