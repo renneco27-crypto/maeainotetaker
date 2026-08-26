@@ -46,6 +46,7 @@ class NetworkWhisperClient {
         if (AppSettings.mode != TranscriptionMode.CLOUD_ONLY) {
             val candidateUrls = listOf(
                 localServerUrl,
+                "http://192.168.1.4:8000/transcribe",
                 "http://10.218.142.107:8000/transcribe",
                 "http://192.168.137.1:8000/transcribe",
                 "http://192.168.43.1:8000/transcribe"
