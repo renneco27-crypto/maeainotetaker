@@ -8,6 +8,7 @@ import os
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
+from phonetic_corrector import corrector
 
 from collections import deque
 
@@ -20,15 +21,15 @@ recent_context = deque(maxlen=5)
 jobs = {}
 
 # Load model on startup
-print("Loading faster-whisper model (small)...")
+print("Loading faster-whisper model (base)...")
 # 'cuda' will use GPU if available, fallback to 'cpu' if not
 try:
-    model = WhisperModel("small", device="cuda", compute_type="float16")
+    model = WhisperModel("base", device="cuda", compute_type="float16")
     print("Loaded on CUDA (GPU)")
 except Exception as e:
-    print(f"CUDA failed, falling back to CPU: {e}")
-    model = WhisperModel("small", device="cpu", compute_type="int8")
-    print("Loaded on CPU")
+    print(f"CUDA unavailable, running on CPU: {e}")
+    model = WhisperModel("base", device="cpu", compute_type="int8")
+    print("Loaded on CPU (int8)")
 
 @app.post("/transcribe")
 async def transcribe(request: Request):
@@ -55,13 +56,16 @@ async def transcribe(request: Request):
         
         raw_text = await asyncio.to_thread(run_transcribe)
         
-        # Add the new transcribed text to our rolling memory context
-        if raw_text:
-            recent_context.append(raw_text)
-            
-        print(f"🎙️ Live Speech Transcribed ({time.time() - start_time:.2f}s): {raw_text}")
+        # Apply Tagalog/Bisaya phonetic and syllable correction
+        corrected_text = corrector.correct_text(raw_text)
         
-        return JSONResponse({"text": raw_text})
+        # Add the new transcribed text to our rolling memory context
+        if corrected_text:
+            recent_context.append(corrected_text)
+            
+        print(f"[LIVE] Transcribed ({time.time() - start_time:.2f}s): {corrected_text}")
+        
+        return JSONResponse({"text": corrected_text})
         
     except Exception as e:
         print(f"❌ Error during live transcription: {e}")
@@ -146,11 +150,14 @@ async def process_job(job_id: str, content: bytes):
             print(f"🛑 Job {job_id} cleaned up after cancellation.\n")
             return
             
+        # Pass through phonetic correction
+        final_text = corrector.correct_text(raw_text)
+        
         print("--------------------------------------------------")
-        print(f"🎉 Job {job_id} Completed Successfully!\n")
+        print(f"🎉 Job {job_id} Completed Successfully!\nFinal: {final_text}\n")
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["progress"] = 100
-        jobs[job_id]["text"] = raw_text
+        jobs[job_id]["text"] = final_text
         
     except Exception as e:
         if jobs.get(job_id, {}).get("status") != "cancelled":
