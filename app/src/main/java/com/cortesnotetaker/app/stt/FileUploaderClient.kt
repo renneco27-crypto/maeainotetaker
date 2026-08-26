@@ -159,6 +159,9 @@ class FileUploaderClient(private val context: Context) {
                         text = if (text == "null" || text.isNullOrBlank()) null else text,
                         segments = segmentsList
                     )
+                } else if (statusRes.code == 404) {
+                    Log.w("FileUploader", "Server returned 404. Job $jobId no longer exists. Aborting poll.")
+                    return@withContext JobStatusResult(status = "error")
                 }
             } catch (e: Exception) {
                 // Ignore and try next candidate
