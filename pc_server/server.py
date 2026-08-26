@@ -40,8 +40,8 @@ async def transcribe(request: Request):
             
         start_time = time.time()
         
-        # Build the context prompt from recent history
-        context_prompt = "This is a lecture in Tagalog (Filipino), Cebuano (Bisaya), and English. "
+        # Build the context prompt in Tagalog to enforce transcribing in the original language (never translate)
+        context_prompt = "Ito ay isang lecture sa Tagalog, Bisaya, at English. Huwag isalin sa Ingles. Isulat nang eksakto kung ano ang sinabi. "
         if recent_context:
             context_prompt += " ".join(recent_context)
             
@@ -49,6 +49,7 @@ async def transcribe(request: Request):
             audio_io = io.BytesIO(audio_bytes)
             segments, info = model.transcribe(
                 audio_io, 
+                task="transcribe",
                 beam_size=5, 
                 initial_prompt=context_prompt
             )
@@ -110,11 +111,12 @@ async def process_job(job_id: str, content: bytes):
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             print(f"🧠 Whisper inference starting...")
-            # Transcribe
+            # Transcribe without translating
             segments, info = model.transcribe(
                 tmp_out_path, 
+                task="transcribe",
                 beam_size=5,
-                initial_prompt="This is a lecture in Tagalog (Filipino), Cebuano (Bisaya), and English. "
+                initial_prompt="Ito ay isang lecture sa Tagalog, Bisaya, at English. Huwag isalin sa Ingles. Isulat nang eksakto kung ano ang sinabi. "
             )
             
             total_duration = getattr(info, "duration", 0.0)
