@@ -74,22 +74,37 @@ class NoteListViewModel(
 
     fun deleteNote(id: Long) {
         viewModelScope.launch {
-            // 1. Cancel local polling job
+            // 1. Cancel local polling job immediately
             activePollingJobs[id]?.cancel()
             activePollingJobs.remove(id)
 
-            // 2. Notify PC server to immediately stop Whisper inference if still processing
             val note = noteRepository.getNoteById(id)
-            note?.jobId?.let { jobId ->
-                if (note.status == "processing") {
-                    Log.d("NoteListViewModel", "Aborting ongoing PC transcription for Job ID: $jobId")
-                    fileUploaderClient.cancelJob(jobId)
+
+            // 2. Immediately delete from database and update UI
+            noteRepository.deleteNote(id)
+            loadNotes()
+
+            // 3. Clean up local audio file from disk
+            note?.audioFilePath?.let { path ->
+                if (path.isNotBlank()) {
+                    try {
+                        val file = java.io.File(path)
+                        if (file.exists()) file.delete()
+                    } catch (e: Exception) {
+                        Log.w("NoteListViewModel", "Could not delete local file: $path")
+                    }
                 }
             }
 
-            // 3. Delete from database
-            noteRepository.deleteNote(id)
-            loadNotes()
+            // 4. Fire-and-forget server cancellation in background without blocking deletion
+            note?.jobId?.let { jobId ->
+                if (note.status == "processing") {
+                    launch(kotlinx.coroutines.Dispatchers.IO) {
+                        Log.d("NoteListViewModel", "Notifying PC server to cancel Job ID: $jobId")
+                        fileUploaderClient.cancelJob(jobId)
+                    }
+                }
+            }
         }
     }
 
