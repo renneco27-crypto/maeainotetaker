@@ -75,11 +75,10 @@ class NoteListViewModel(
                 
                 val segment = com.cortesnotetaker.app.data.db.entity.SegmentEntity(
                     noteId = noteId,
-                    startTimeMs = 0L,
-                    endTimeMs = 0L,
+                    startMs = 0L,
+                    endMs = 0L,
                     rawTranscript = transcript,
-                    displayTranscript = transcript,
-                    isSilent = false
+                    displayTranscript = transcript
                 )
                 segmentRepository.insert(segment)
                 
