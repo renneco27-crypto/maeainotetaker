@@ -73,7 +73,6 @@ async def transcribe(request: Request):
                 repetition_penalty=1.2, # Penalizes token repetition loops
                 compression_ratio_threshold=2.4, # Drops repetitive hallucinations
                 no_speech_threshold=0.6,
-                word_timestamps=True,   # Per-word confidence scores for BERT
                 initial_prompt=VOCAB_PROMPT
             )
             
@@ -82,20 +81,8 @@ async def transcribe(request: Request):
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
                     
-                words_with_probs = []
-                if segment.words:
-                    for w in segment.words:
-                        words_with_probs.append({'word': w.word, 'prob': w.probability})
-                else:
-                    for w in segment.text.strip().split():
-                        words_with_probs.append({'word': w, 'prob': segment.avg_logprob})
-
-                # If the overall segment is very confident, just apply basic phonetic corrections
-                if segment.avg_logprob >= -0.3:
-                    text_clean = corrector.correct_text(segment.text.strip())
-                else:
-                    # Otherwise, use Multilingual AI to fix low-confidence words via context
-                    text_clean = corrector.correct_with_context(words_with_probs)
+                # Just apply basic phonetic dictionary, do NOT suppress or drop words
+                text_clean = corrector.correct_text(segment.text.strip())
 
                 if text_clean:
                     valid_texts.append(text_clean)
@@ -167,7 +154,6 @@ async def process_job(job_id: str, content: bytes):
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
                 no_speech_threshold=0.6,
-                word_timestamps=True,   # Per-word confidence scores
                 initial_prompt=VOCAB_PROMPT
             )
             
@@ -186,21 +172,8 @@ async def process_job(job_id: str, content: bytes):
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
 
-                words_with_probs = []
-                if segment.words:
-                    for w in segment.words:
-                        words_with_probs.append({'word': w.word, 'prob': w.probability})
-                else:
-                    # Fallback if no word timestamps
-                    for w in segment.text.strip().split():
-                        words_with_probs.append({'word': w, 'prob': segment.avg_logprob})
-
-                # If the overall segment is very confident, just apply basic phonetic corrections
-                if segment.avg_logprob >= -0.3:
-                    text_clean = corrector.correct_text(segment.text.strip())
-                else:
-                    # Otherwise, use Multilingual AI to fix low-confidence words via context
-                    text_clean = corrector.correct_with_context(words_with_probs)
+                # Just apply basic phonetic dictionary, do NOT suppress or drop words
+                text_clean = corrector.correct_text(segment.text.strip())
 
                 if not text_clean:
                     continue
