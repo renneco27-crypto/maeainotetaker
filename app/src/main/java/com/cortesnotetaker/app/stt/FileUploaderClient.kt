@@ -58,6 +58,10 @@ class FileUploaderClient(private val context: Context) {
         }
     }
 
+    companion object {
+        val hfCompletedJobs = java.util.concurrent.ConcurrentHashMap<String, JobStatusResult>()
+    }
+
     /**
      * Uploads the audio file to the PC and returns the jobId immediately.
      */
@@ -77,6 +81,15 @@ class FileUploaderClient(private val context: Context) {
             }
 
             Log.d("FileUploader", "File prepared (${tempFile.length()} bytes). Uploading...")
+            
+            // 1. Try Hugging Face Cloud directly FIRST
+            val hfJobId = uploadToHuggingFaceDirectlyAsync(tempFile)
+            if (hfJobId != null) {
+                tempFile.delete()
+                return@withContext hfJobId
+            }
+            
+            // 2. Fallback to Local PC Server
 
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
@@ -127,6 +140,10 @@ class FileUploaderClient(private val context: Context) {
      * Checks the job status for a given jobId.
      */
     suspend fun checkJobStatus(jobId: String): JobStatusResult? = withContext(Dispatchers.IO) {
+        if (hfCompletedJobs.containsKey(jobId)) {
+            return@withContext hfCompletedJobs[jobId]
+        }
+        
         val baseUrls = getCandidateBaseUrls()
         for (baseUrl in baseUrls) {
             val statusUrl = "$baseUrl/job_status/$jobId"
@@ -192,5 +209,105 @@ class FileUploaderClient(private val context: Context) {
             }
         }
         return@withContext false
+    }
+
+    private suspend fun uploadToHuggingFaceDirectlyAsync(tempFile: File): String? = withContext(Dispatchers.IO) {
+        val hfBase = "https://alibaba2304-lectaaa.hf.space"
+        try {
+            Log.d("FileUploader", "Attempting direct upload to Hugging Face...")
+            
+            // STEP 1: Upload
+            val uploadBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("files", tempFile.name, tempFile.asRequestBody("application/octet-stream".toMediaTypeOrNull()))
+                .build()
+                
+            val uploadReq = Request.Builder().url("$hfBase/upload").post(uploadBody).build()
+            val uploadRes = uploadClient.newCall(uploadReq).execute()
+            if (!uploadRes.isSuccessful) return@withContext null
+            
+            val uploadJson = org.json.JSONArray(uploadRes.body?.string() ?: "[]")
+            if (uploadJson.length() == 0) return@withContext null
+            val uploadedPath = uploadJson.getString(0)
+            
+            Log.d("FileUploader", "HF Upload Success. Path: \$uploadedPath")
+            
+            // STEP 2: Submit Job
+            val predictBodyStr = "{\"data\": [{\"path\": \"\$uploadedPath\"}]}"
+            val predictBody = okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), predictBodyStr)
+            val predictReq = Request.Builder().url("$hfBase/call/predict").post(predictBody).build()
+            val predictRes = uploadClient.newCall(predictReq).execute()
+            
+            if (!predictRes.isSuccessful) return@withContext null
+            
+            val predictResJson = JSONObject(predictRes.body?.string() ?: "{}")
+            val eventId = predictResJson.optString("event_id", "")
+            if (eventId.isEmpty()) return@withContext null
+            
+            Log.d("FileUploader", "HF Job Submitted. Event ID: \$eventId")
+            
+            // Register job
+            hfCompletedJobs[eventId] = JobStatusResult(status = "processing", progress = 50)
+            
+            // STEP 3: Listen to SSE Stream in background
+            kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+                listenToHfSseStream(hfBase, eventId)
+            }
+            
+            return@withContext eventId
+            
+        } catch (e: Exception) {
+            Log.e("FileUploader", "HF Direct failed", e)
+        }
+        return@withContext null
+    }
+    
+    private fun listenToHfSseStream(hfBase: String, eventId: String) {
+        try {
+            val sseClient = OkHttpClient.Builder()
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .build()
+                
+            val req = Request.Builder().url("$hfBase/call/predict/$eventId").get().build()
+            sseClient.newCall(req).execute().use { response ->
+                val inputStream = response.body?.byteStream() ?: return
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream))
+                
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    if (line!!.startsWith("data: ")) {
+                        val dataStr = line!!.substring(6)
+                        try {
+                            val json = JSONObject(dataStr)
+                            val msg = json.optString("msg")
+                            if (msg == "process_completed") {
+                                val outputObj = json.optJSONObject("output")
+                                val dataArr = outputObj?.optJSONArray("data")
+                                val text = dataArr?.optString(0, "")
+                                
+                                val segments = mutableListOf<ImportedSegmentResult>()
+                                if (!text.isNullOrBlank()) {
+                                    segments.add(ImportedSegmentResult(0, 1000000, text))
+                                }
+                                
+                                hfCompletedJobs[eventId] = JobStatusResult(
+                                    status = "completed",
+                                    progress = 100,
+                                    text = text,
+                                    segments = segments
+                                )
+                                Log.d("FileUploader", "HF Job Completed: \$eventId")
+                                return
+                            }
+                        } catch (e: Exception) {
+                            // ignore json parse error for heartbeat
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("FileUploader", "HF SSE Stream failed", e)
+            hfCompletedJobs[eventId] = JobStatusResult(status = "error")
+        }
     }
 }
