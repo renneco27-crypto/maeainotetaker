@@ -9,3 +9,4 @@ symspellpy
 transformers
 torch
 Levenshtein
+gradio-client
