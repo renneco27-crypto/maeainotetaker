@@ -36,6 +36,11 @@ except Exception as e:
     )
     print(f"Loaded on C++ CPU (int8, {os.cpu_count()} threads, 2 workers)")
 
+import numpy as np
+
+# Static clean prompt to guide language detection without causing autoregressive hallucination loops
+STATIC_PROMPT = "Ito ay lecture sa Tagalog, Bisaya, at English. Isulat nang eksakto kung ano ang sinabi. "
+
 @app.post("/transcribe")
 async def transcribe(request: Request):
     try:
@@ -45,34 +50,46 @@ async def transcribe(request: Request):
             
         start_time = time.time()
         
-        # Build the context prompt in Tagalog to enforce transcribing in the original language (never translate)
-        context_prompt = "Ito ay isang lecture sa Tagalog, Bisaya, at English. Huwag isalin sa Ingles. Isulat nang eksakto kung ano ang sinabi. "
-        if recent_context:
-            context_prompt += " ".join(recent_context)
+        # 1. Fast RMS Energy Gate: Instantly skip pure silence / background microphone hiss (<1ms check)
+        if len(audio_bytes) > 44:
+            # Skip 44-byte WAV header and inspect raw 16-bit PCM samples
+            pcm_samples = np.frombuffer(audio_bytes[44:], dtype=np.int16)
+            if len(pcm_samples) > 0:
+                rms = np.sqrt(np.mean(pcm_samples.astype(np.float32) ** 2))
+                if rms < 180:  # Silence / very quiet background hiss
+                    return JSONResponse({"text": ""})
             
         def run_transcribe():
             audio_io = io.BytesIO(audio_bytes)
             segments, info = model.transcribe(
                 audio_io, 
                 task="transcribe",
-                beam_size=1,  # 3-4x faster than beam_size=5 (Greedy search)
+                beam_size=1,  # Fast greedy search
                 best_of=1,
                 temperature=0.0,
-                vad_filter=True, # C++ VAD skips non-speech sections instantly
-                condition_on_previous_text=False,
-                initial_prompt=context_prompt
+                vad_filter=True, # Silero VAD skips non-speech sections
+                vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
+                condition_on_previous_text=False, # Prevents looping previous words
+                initial_prompt=STATIC_PROMPT
             )
-            return " ".join([segment.text for segment in segments]).strip()
+            
+            valid_texts = []
+            for segment in segments:
+                # Discard segments where model detected high probability of no speech
+                if segment.no_speech_prob > 0.6:
+                    continue
+                valid_texts.append(segment.text)
+                
+            return " ".join(valid_texts).strip()
         
         raw_text = await asyncio.to_thread(run_transcribe)
+        
+        if not raw_text:
+            return JSONResponse({"text": ""})
         
         # Apply Tagalog/Bisaya phonetic and syllable correction
         corrected_text = corrector.correct_text(raw_text)
         
-        # Add the new transcribed text to our rolling memory context
-        if corrected_text:
-            recent_context.append(corrected_text)
-            
         print(f"[LIVE] Transcribed ({time.time() - start_time:.2f}s): {corrected_text}")
         
         return JSONResponse({"text": corrected_text})
