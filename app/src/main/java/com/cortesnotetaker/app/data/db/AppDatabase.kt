@@ -11,7 +11,7 @@ import com.cortesnotetaker.app.data.db.entity.SegmentEntity
 
 @Database(
     entities = [NoteEntity::class, SegmentEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -11,5 +11,9 @@ data class NoteEntity(
     var audioFilePath: String = "",
     var createdAt: Long = System.currentTimeMillis(),
     var durationMs: Long = 0L,
-    var language: String = "auto"
+    var language: String = "auto",
+    var jobId: String? = null,
+    var status: String = "completed", // "processing", "completed", "error"
+    var progress: Int = 0,
+    var isUnread: Boolean = false
 )

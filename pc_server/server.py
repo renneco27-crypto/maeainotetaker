@@ -96,10 +96,11 @@ async def transcribe(request: Request):
 @app.post("/transcribe_file")
 async def transcribe_file(file: UploadFile = File(...)):
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "processing", "text": None, "error": None}
+    jobs[job_id] = {"status": "processing", "progress": 0, "text": None, "error": None}
     
     # Save uploaded file to memory
     content = await file.read()
+    print(f"\n📥 Received audio file upload: {file.filename} ({len(content) / (1024*1024):.2f} MB)")
     
     # Spawn background task
     asyncio.create_task(process_job(job_id, content))
@@ -120,7 +121,7 @@ async def process_job(job_id: str, content: bytes):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
                 tmp_out_path = tmp_out.name
                 
-            print(f"Job {job_id}: Processing {len(content)} bytes with 1.5x FFmpeg speedup...")
+            print(f"⚡ Applying 1.5x FFmpeg speedup to audio...")
             # Run ffmpeg to speed up 1.5x and convert to 16kHz WAV
             cmd = [
                 "ffmpeg", "-y", "-i", tmp_in_path, 
@@ -130,20 +131,42 @@ async def process_job(job_id: str, content: bytes):
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            print(f"Job {job_id}: FFmpeg complete. Starting Whisper inference...")
+            print(f"🧠 Whisper inference starting...")
             # Transcribe
             segments, info = model.transcribe(
                 tmp_out_path, 
                 beam_size=5,
                 initial_prompt="This is a lecture in Tagalog (Filipino), Cebuano (Bisaya), and English. "
             )
-            return " ".join([segment.text for segment in segments]).strip()
+            
+            total_duration = getattr(info, "duration", 0.0)
+            print(f"⏱️ Total Audio Duration: {total_duration:.1f}s")
+            print("--------------------------------------------------")
+            
+            collected_segments = []
+            for segment in segments:
+                collected_segments.append(segment.text)
+                progress_pct = min(100, int((segment.end / total_duration) * 100)) if total_duration > 0 else 0
+                
+                # Visual terminal progress bar
+                bar_len = 20
+                filled_len = int(bar_len * progress_pct / 100)
+                bar = "█" * filled_len + "░" * (bar_len - filled_len)
+                
+                print(f"[{bar}] {progress_pct:3d}% | {segment.start:5.1f}s -> {segment.end:5.1f}s | {segment.text.strip()}")
+                
+                # Update progress for phone polling
+                jobs[job_id]["progress"] = progress_pct
+                
+            return " ".join(collected_segments).strip()
 
         # Run the heavy processing in a thread pool
         raw_text = await asyncio.to_thread(run_processing)
         
-        print(f"Job {job_id}: Completed successfully!")
+        print("--------------------------------------------------")
+        print(f"🎉 Job {job_id} Completed Successfully!\n")
         jobs[job_id]["status"] = "completed"
+        jobs[job_id]["progress"] = 100
         jobs[job_id]["text"] = raw_text
         
     except Exception as e:

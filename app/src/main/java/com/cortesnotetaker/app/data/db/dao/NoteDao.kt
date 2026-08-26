@@ -24,6 +24,21 @@ interface NoteDao {
     @Query("UPDATE notes SET title = :title, subject = :subject WHERE id = :id")
     suspend fun updateNote(id: Long, title: String, subject: String?): Int
 
+    @Query("UPDATE notes SET status = :status, isUnread = :isUnread WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, isUnread: Boolean): Int
+
+    @Query("UPDATE notes SET progress = :progress WHERE id = :id")
+    suspend fun updateProgress(id: Long, progress: Int): Int
+
+    @Query("UPDATE notes SET jobId = :jobId WHERE id = :id")
+    suspend fun updateJobId(id: Long, jobId: String): Int
+
+    @Query("UPDATE notes SET isUnread = 0 WHERE id = :id")
+    suspend fun markAsRead(id: Long): Int
+
+    @Query("SELECT * FROM notes WHERE status = 'processing'")
+    suspend fun getProcessingNotes(): List<NoteEntity>
+
     @Query("SELECT * FROM notes WHERE title LIKE :query OR subject LIKE :query ORDER BY createdAt DESC")
     fun searchNotes(query: String): Flow<List<NoteEntity>>
 }

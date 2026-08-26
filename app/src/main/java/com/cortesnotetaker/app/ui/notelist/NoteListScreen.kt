@@ -183,32 +183,16 @@ fun NoteListScreen(
                     items(notes, key = { it.id }) { note ->
                         NoteCard(
                             note = note,
-                            onClick = { onNoteClick(note.id) },
+                            onClick = {
+                                viewModel.markNoteAsRead(note.id)
+                                onNoteClick(note.id)
+                            },
                             onDelete = { viewModel.deleteNote(note.id) }
                         )
                     }
                 }
             }
         }
-    }
-    
-    val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
-    if (importProgress != null) {
-        AlertDialog(
-            onDismissRequest = { /* Do not allow dismissal while processing */ },
-            title = { Text("Importing File") },
-            text = { 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth().padding(16.dp)
-                ) {
-                    androidx.compose.material3.CircularProgressIndicator()
-                    Text(importProgress!!)
-                }
-            },
-            confirmButton = {}
-        )
     }
 }
 
@@ -244,13 +228,23 @@ fun NoteCard(
     }
 
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy • HH:mm", Locale.getDefault()) }
+    val isGreenReady = note.isUnread && note.status == "completed"
+    val isProcessing = note.status == "processing"
+    val isError = note.status == "error"
     
     Card(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            containerColor = if (isGreenReady) {
+                androidx.compose.ui.graphics.Color(0xFFE8F5E9) // Light green tint
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHighest
+            }
         ),
+        border = if (isGreenReady) {
+            androidx.compose.foundation.BorderStroke(2.dp, androidx.compose.ui.graphics.Color(0xFF4CAF50))
+        } else null,
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(
@@ -272,14 +266,63 @@ fun NoteCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                note.subject?.let { subj ->
-                    if (subj.isNotBlank()) {
-                        SuggestionChip(
-                            onClick = { },
-                            label = { Text(subj, style = MaterialTheme.typography.labelSmall) }
+                
+                if (isGreenReady) {
+                    androidx.compose.material3.Surface(
+                        color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "✨ Ready",
+                            color = androidx.compose.ui.graphics.Color.White,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
+                } else if (isProcessing) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = if (note.progress > 0) "${note.progress}%" else "Starting...",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else if (isError) {
+                    Text(
+                        text = "⚠️ Upload Error",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    note.subject?.let { subj ->
+                        if (subj.isNotBlank()) {
+                            SuggestionChip(
+                                onClick = { },
+                                label = { Text(subj, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
                 }
+            }
+            
+            if (isProcessing) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { if (note.progress > 0) note.progress / 100f else 0.05f },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
             }
             
             Row(
@@ -296,11 +339,13 @@ fun NoteCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
-                        text = formatDuration(note.durationMs),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (note.durationMs > 0L) {
+                        Text(
+                            text = formatDuration(note.durationMs),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { showDeleteDialog = true }, modifier = Modifier.size(24.dp)) {
                         Icon(
                             Icons.Default.Delete,
