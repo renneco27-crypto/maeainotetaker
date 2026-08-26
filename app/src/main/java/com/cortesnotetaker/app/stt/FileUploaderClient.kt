@@ -35,7 +35,7 @@ class FileUploaderClient(private val context: Context) {
     // Upload client needs longer timeouts for massive files
     private val uploadClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(600, TimeUnit.SECONDS)
         .build()
 
@@ -107,9 +107,11 @@ class FileUploaderClient(private val context: Context) {
                             tempFile.delete()
                             return@withContext jobId
                         }
+                    } else {
+                        Log.e("FileUploader", "Server rejected upload at $uploadUrl with code ${response.code}: ${response.message}")
                     }
                 } catch (e: Exception) {
-                    Log.w("FileUploader", "Failed to upload to $uploadUrl: ${e.message}")
+                    Log.e("FileUploader", "CRITICAL UPLOAD ERROR to $uploadUrl: ${e.javaClass.simpleName} - ${e.message}", e)
                 }
             }
             
