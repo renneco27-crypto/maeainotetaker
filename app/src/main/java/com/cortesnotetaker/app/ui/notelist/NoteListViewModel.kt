@@ -198,17 +198,32 @@ class NoteListViewModel(
             if (result != null) {
                 when (result.status) {
                     "completed" -> {
-                        val transcript = result.text ?: ""
-                        Log.d("NoteListViewModel", "Job $jobId completed. Saving segments for note $noteId")
-                        if (transcript.isNotBlank()) {
-                            val segment = SegmentEntity(
-                                noteId = noteId,
-                                startMs = 0L,
-                                endMs = 0L,
-                                rawTranscript = transcript,
-                                displayTranscript = transcript
-                            )
-                            segmentRepository.insert(segment)
+                        val segments = result.segments
+                        Log.d("NoteListViewModel", "Job $jobId completed with ${segments.size} segments. Saving to database for note $noteId")
+                        if (segments.isNotEmpty()) {
+                            val entities = segments.map { seg ->
+                                SegmentEntity(
+                                    noteId = noteId,
+                                    startMs = seg.startMs,
+                                    endMs = seg.endMs,
+                                    rawTranscript = seg.text,
+                                    displayTranscript = seg.text,
+                                    isUnclear = false
+                                )
+                            }
+                            segmentRepository.insertAll(entities)
+                        } else {
+                            val transcript = result.text ?: ""
+                            if (transcript.isNotBlank()) {
+                                val segment = SegmentEntity(
+                                    noteId = noteId,
+                                    startMs = 0L,
+                                    endMs = 0L,
+                                    rawTranscript = transcript,
+                                    displayTranscript = transcript
+                                )
+                                segmentRepository.insert(segment)
+                            }
                         }
                         // Mark as completed and isUnread = true (Green indicator!)
                         noteRepository.updateStatus(noteId, "completed", isUnread = true)

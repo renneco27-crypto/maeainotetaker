@@ -162,13 +162,26 @@ async def process_job(job_id: str, content: bytes):
                 # Check if client requested cancellation
                 if jobs.get(job_id, {}).get("status") == "cancelled":
                     print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
-                    return ""
+                    return []
 
                 # Skip hallucinated silence or repetition loops
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
 
-                collected_segments.append(segment.text)
+                text_clean = segment.text.strip()
+                if not text_clean:
+                    continue
+
+                # Scale back by 1.5x to match the original unmodified audio timestamps
+                orig_start_ms = int(segment.start * 1.5 * 1000)
+                orig_end_ms = int(segment.end * 1.5 * 1000)
+
+                collected_segments.append({
+                    "start_ms": orig_start_ms,
+                    "end_ms": orig_end_ms,
+                    "text": text_clean
+                })
+                
                 progress_pct = min(100, int((segment.end / total_duration) * 100)) if total_duration > 0 else 0
                 
                 # Visual terminal progress bar
@@ -176,28 +189,39 @@ async def process_job(job_id: str, content: bytes):
                 filled_len = int(bar_len * progress_pct / 100)
                 bar = "█" * filled_len + "░" * (bar_len - filled_len)
                 
-                print(f"[{bar}] {progress_pct:3d}% | {segment.start:5.1f}s -> {segment.end:5.1f}s | {segment.text.strip()}")
+                print(f"[{bar}] {progress_pct:3d}% | {orig_start_ms/1000:5.1f}s -> {orig_end_ms/1000:5.1f}s | {text_clean}")
                 
                 # Update progress for phone polling
                 jobs[job_id]["progress"] = progress_pct
                 
-            return " ".join(collected_segments).strip()
+            return collected_segments
 
         # Run the heavy processing in a thread pool
-        raw_text = await asyncio.to_thread(run_processing)
+        raw_segments = await asyncio.to_thread(run_processing)
         
         if jobs.get(job_id, {}).get("status") == "cancelled":
             print(f"🛑 Job {job_id} cleaned up after cancellation.\n")
             return
             
-        # Pass through phonetic correction
-        final_text = corrector.correct_text(raw_text)
+        # Apply Tagalog/Bisaya phonetic correction to each segment
+        processed_segments = []
+        for s in raw_segments:
+            corrected = corrector.correct_text(s["text"])
+            if corrected:
+                processed_segments.append({
+                    "start_ms": s["start_ms"],
+                    "end_ms": s["end_ms"],
+                    "text": corrected
+                })
+        
+        final_text = " ".join([s["text"] for s in processed_segments])
         
         print("--------------------------------------------------")
-        print(f"🎉 Job {job_id} Completed Successfully!\nFinal: {final_text}\n")
+        print(f"🎉 Job {job_id} Completed Successfully with {len(processed_segments)} timestamped segments!\n")
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["progress"] = 100
         jobs[job_id]["text"] = final_text
+        jobs[job_id]["segments"] = processed_segments
         
     except Exception as e:
         if jobs.get(job_id, {}).get("status") != "cancelled":

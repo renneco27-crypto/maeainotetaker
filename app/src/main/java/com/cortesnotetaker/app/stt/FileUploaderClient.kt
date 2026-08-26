@@ -15,10 +15,17 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+data class ImportedSegmentResult(
+    val startMs: Long,
+    val endMs: Long,
+    val text: String
+)
+
 data class JobStatusResult(
     val status: String, // "processing", "completed", "error"
     val progress: Int = 0,
-    val text: String? = null
+    val text: String? = null,
+    val segments: List<ImportedSegmentResult> = emptyList()
 )
 
 class FileUploaderClient(private val context: Context) {
@@ -132,10 +139,25 @@ class FileUploaderClient(private val context: Context) {
                     val progress = statusJson.optInt("progress", 0)
                     val text = statusJson.optString("text", null)
                     
+                    val segmentsList = mutableListOf<ImportedSegmentResult>()
+                    val segmentsArray = statusJson.optJSONArray("segments")
+                    if (segmentsArray != null) {
+                        for (i in 0 until segmentsArray.length()) {
+                            val segObj = segmentsArray.getJSONObject(i)
+                            val sMs = segObj.optLong("start_ms", 0L)
+                            val eMs = segObj.optLong("end_ms", 0L)
+                            val segText = segObj.optString("text", "")
+                            if (segText.isNotBlank()) {
+                                segmentsList.add(ImportedSegmentResult(sMs, eMs, segText))
+                            }
+                        }
+                    }
+                    
                     return@withContext JobStatusResult(
                         status = status,
                         progress = progress,
-                        text = if (text == "null" || text.isNullOrBlank()) null else text
+                        text = if (text == "null" || text.isNullOrBlank()) null else text,
+                        segments = segmentsList
                     )
                 }
             } catch (e: Exception) {
