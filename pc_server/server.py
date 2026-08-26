@@ -21,14 +21,14 @@ recent_context = deque(maxlen=5)
 jobs = {}
 
 # Load model on startup with maximum C++ CPU threads and parallel workers
-print(f"Loading faster-whisper C++ model (base) across {os.cpu_count()} CPU threads...")
+print(f"Loading faster-whisper C++ model (small) across {os.cpu_count()} CPU threads...")
 try:
-    model = WhisperModel("base", device="cuda", compute_type="float16", cpu_threads=os.cpu_count() or 4)
+    model = WhisperModel("small", device="cuda", compute_type="float16", cpu_threads=os.cpu_count() or 4)
     print("Loaded on CUDA (GPU)")
 except Exception as e:
     print(f"CUDA unavailable, running optimized on C++ CPU engine: {e}")
     model = WhisperModel(
-        "base", 
+        "small", 
         device="cpu", 
         compute_type="int8", 
         cpu_threads=os.cpu_count() or 4,

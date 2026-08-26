@@ -22,14 +22,14 @@ def main():
         print(f"Error: File '{input_file}' not found.")
         sys.exit(1)
 
-    print(f"Loading faster-whisper C++ model (base) across {os.cpu_count()} CPU threads...")
+    print(f"Loading faster-whisper C++ model (small) across {os.cpu_count()} CPU threads...")
     try:
-        model = WhisperModel("base", device="cuda", compute_type="float16", cpu_threads=os.cpu_count() or 4)
+        model = WhisperModel("small", device="cuda", compute_type="float16", cpu_threads=os.cpu_count() or 4)
         print("Loaded on CUDA (GPU)")
     except Exception as e:
         print(f"CUDA unavailable, running optimized on C++ CPU engine")
         model = WhisperModel(
-            "base", 
+            "small", 
             device="cpu", 
             compute_type="int8", 
             cpu_threads=os.cpu_count() or 4,
