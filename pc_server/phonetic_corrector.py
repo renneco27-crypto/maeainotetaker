@@ -129,10 +129,16 @@ class PhoneticCorrector:
                 # Update word if we found a better contextual replacement
                 if best_distance <= 2:
                     words_with_probs[idx]['word'] = best_pred
+                else:
+                    # If AI couldn't find a good phonetic match, it's likely pure noise. Drop it.
+                    words_with_probs[idx]['word'] = ""
             except Exception as e:
                 print(f"[WARN] Masked LM failed on sentence: {e}")
+                words_with_probs[idx]['word'] = ""
                 
-        return " ".join([w['word'] for w in words_with_probs]).strip()
+        # Filter out empty words
+        final_words = [w['word'] for w in words_with_probs if w['word'].strip() != ""]
+        return " ".join(final_words).strip()
 
     def _match_case(self, original: str, replacement: str) -> str:
         """Transfers capitalization from the original token to the replacement."""

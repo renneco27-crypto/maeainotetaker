@@ -184,17 +184,12 @@ async def process_job(job_id: str, content: bytes):
                     for w in segment.text.strip().split():
                         words_with_probs.append({'word': w, 'prob': segment.avg_logprob})
 
-                # Tier 1: High-confidence segment — keep full sentence, just apply basic phonetic dict
-                if segment.avg_logprob >= -0.5:
+                # If the overall segment is very confident, just apply basic phonetic corrections
+                if segment.avg_logprob >= -0.3:
                     text_clean = corrector.correct_text(segment.text.strip())
-
-                # Tier 2: Medium-confidence — use Multilingual AI to fix low-confidence words via context
-                elif segment.avg_logprob >= -0.72:
-                    text_clean = corrector.correct_with_context(words_with_probs)
-
-                # Tier 3: Low-confidence — discard entirely
                 else:
-                    continue
+                    # Otherwise, use Multilingual AI to fix low-confidence words via context
+                    text_clean = corrector.correct_with_context(words_with_probs)
 
                 if not text_clean:
                     continue
