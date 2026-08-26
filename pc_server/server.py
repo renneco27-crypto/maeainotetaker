@@ -64,8 +64,8 @@ async def transcribe(request: Request):
             segments, info = model.transcribe(
                 audio_io, 
                 task="transcribe",
-                beam_size=1,
-                best_of=1,
+                beam_size=5,
+                best_of=5,
                 temperature=0.0,
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=1000, speech_pad_ms=150),
@@ -169,8 +169,8 @@ async def process_job(job_id: str, content: bytes):
                 segments_gen, _ = model.transcribe(
                     chunk_path, 
                     task="transcribe",
-                    beam_size=1,
-                    best_of=1,
+                    beam_size=5,
+                    best_of=5,
                     temperature=0.0,
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
