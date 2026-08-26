@@ -1,5 +1,10 @@
 import io
 import time
+import uuid
+import subprocess
+import asyncio
+import tempfile
+import os
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
@@ -10,6 +15,9 @@ app = FastAPI(title="Local PC Whisper Server")
 
 # Rolling memory of the last few transcribed segments to provide context to Whisper
 recent_context = deque(maxlen=5)
+
+# Job queue for large file uploads
+jobs = {}
 
 # Load model on startup
 print("Loading faster-whisper model (small)...")
@@ -85,7 +93,79 @@ async def transcribe(request: Request):
         print(f"Error during transcription: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
+@app.post("/transcribe_file")
+async def transcribe_file(file: UploadFile = File(...)):
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {"status": "processing", "text": None, "error": None}
+    
+    # Save uploaded file to memory
+    content = await file.read()
+    
+    # Spawn background task
+    asyncio.create_task(process_job(job_id, content))
+    return JSONResponse({"job_id": job_id})
+
+async def process_job(job_id: str, content: bytes):
+    tmp_in_path = None
+    tmp_out_path = None
+    try:
+        # Use a thread to avoid blocking the asyncio event loop for file I/O
+        def run_processing():
+            nonlocal tmp_in_path, tmp_out_path
+            # Create temp files
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".media") as tmp_in:
+                tmp_in.write(content)
+                tmp_in_path = tmp_in.name
+                
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
+                tmp_out_path = tmp_out.name
+                
+            print(f"Job {job_id}: Processing {len(content)} bytes with 1.5x FFmpeg speedup...")
+            # Run ffmpeg to speed up 1.5x and convert to 16kHz WAV
+            cmd = [
+                "ffmpeg", "-y", "-i", tmp_in_path, 
+                "-filter:a", "atempo=1.5", 
+                "-ar", "16000", "-ac", "1", 
+                tmp_out_path
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            print(f"Job {job_id}: FFmpeg complete. Starting Whisper inference...")
+            # Transcribe
+            segments, info = model.transcribe(
+                tmp_out_path, 
+                beam_size=5,
+                initial_prompt="This is a lecture in Tagalog (Filipino), Cebuano (Bisaya), and English. "
+            )
+            return " ".join([segment.text for segment in segments]).strip()
+
+        # Run the heavy processing in a thread pool
+        raw_text = await asyncio.to_thread(run_processing)
+        
+        print(f"Job {job_id}: Completed successfully!")
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["text"] = raw_text
+        
+    except Exception as e:
+        print(f"Job {job_id} Error: {e}")
+        jobs[job_id]["status"] = "error"
+        jobs[job_id]["error"] = str(e)
+    finally:
+        # Cleanup temp files
+        try:
+            if tmp_in_path and os.path.exists(tmp_in_path):
+                os.remove(tmp_in_path)
+            if tmp_out_path and os.path.exists(tmp_out_path):
+                os.remove(tmp_out_path)
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+
+@app.get("/job_status/{job_id}")
+async def job_status(job_id: str):
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JSONResponse(jobs[job_id])
+
 if __name__ == "__main__":
     import uvicorn
-    # Listen on all interfaces so the phone can connect
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

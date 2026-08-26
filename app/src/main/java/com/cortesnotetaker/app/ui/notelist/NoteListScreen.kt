@@ -179,6 +179,25 @@ fun NoteListScreen(
             }
         }
     }
+    
+    val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
+    if (importProgress != null) {
+        AlertDialog(
+            onDismissRequest = { /* Do not allow dismissal while processing */ },
+            title = { Text("Importing File") },
+            text = { 
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp)
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator()
+                    Text(importProgress!!)
+                }
+            },
+            confirmButton = {}
+        )
+    }
 }
 
 @Composable

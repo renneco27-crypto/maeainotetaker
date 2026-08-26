@@ -33,11 +33,12 @@ val audioModule = module {
     factory { MediaRecorderManager(androidContext()) }
     single { SileroVadDetector(androidContext()) }
     single { WhisperEngine() }
+    single { com.cortesnotetaker.app.stt.FileUploaderClient(androidContext()) }
     factory { AudioPlaybackManager(androidContext()) }
 }
 
 val viewModelModule = module {
-    viewModel { NoteListViewModel(get()) }
+    viewModel { NoteListViewModel(get(), get(), get()) }
     viewModel { RecordingViewModel(get(), get()) }
     viewModel { (noteId: Long) -> NoteDetailViewModel(noteId, get(), get(), androidContext()) }
 }

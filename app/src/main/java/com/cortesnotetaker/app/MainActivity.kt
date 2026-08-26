@@ -30,9 +30,14 @@ class MainActivity : ComponentActivity() {
         // Permissions evaluated
     }
 
+    private var sharedAudioUri = androidx.compose.runtime.mutableStateOf<android.net.Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         checkAndRequestPermissions()
+        
+        handleIntent(intent)
+        
         setContent {
             LecturePalTheme {
                 Surface(
@@ -41,7 +46,30 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
                     AppNavHost(navController)
+                    
+                    val uri = sharedAudioUri.value
+                    if (uri != null) {
+                        val viewModel: com.cortesnotetaker.app.ui.notelist.NoteListViewModel = org.koin.androidx.compose.koinViewModel()
+                        androidx.compose.runtime.LaunchedEffect(uri) {
+                            viewModel.handleSharedAudioFile(uri)
+                            sharedAudioUri.value = null
+                        }
+                    }
                 }
+            }
+        }
+    }
+    
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: android.content.Intent) {
+        if (intent.action == android.content.Intent.ACTION_SEND && intent.type?.startsWith("audio/") == true) {
+            val uri = intent.getParcelableExtra<android.net.Uri>(android.content.Intent.EXTRA_STREAM)
+            if (uri != null) {
+                sharedAudioUri.value = uri
             }
         }
     }
