@@ -64,11 +64,10 @@ async def transcribe(request: Request):
             segments, info = model.transcribe(
                 audio_io, 
                 task="transcribe",
-                beam_size=1,  # Fast greedy search
-                best_of=1,
+                beam_size=5,
+                best_of=5,
                 temperature=0.0,
-                vad_filter=True, # Silero VAD skips non-speech sections
-                vad_parameters=dict(min_silence_duration_ms=1000, speech_pad_ms=150),
+                vad_filter=False,
                 condition_on_previous_text=True, # Allow context to form full sentences
                 repetition_penalty=1.2, # Penalizes token repetition loops
                 compression_ratio_threshold=2.4, # Drops repetitive hallucinations
@@ -78,7 +77,7 @@ async def transcribe(request: Request):
             
             valid_texts = []
             for segment in segments:
-                if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
+                if segment.compression_ratio > 2.4:
                     continue
                     
                 # Just apply basic phonetic dictionary, do NOT suppress or drop words
@@ -145,11 +144,10 @@ async def process_job(job_id: str, content: bytes):
             segments, info = model.transcribe(
                 tmp_out_path, 
                 task="transcribe",
-                beam_size=1,
-                best_of=1,
+                beam_size=5,  # Maximum accuracy (slower but checks multiple paths)
+                best_of=5,
                 temperature=0.0,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
+                vad_filter=False,  # DO NOT cut audio, let Whisper hear everything
                 condition_on_previous_text=True,
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
@@ -168,8 +166,12 @@ async def process_job(job_id: str, content: bytes):
                     print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
                     return []
 
+                orig_start_s = segment.start
+                orig_end_s = segment.end
+
                 # Skip hallucinated silence or repetition loops at segment level
-                if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
+                if segment.compression_ratio > 2.4:
+                    print(f"  [SKIPPED {orig_start_s:.1f}s] high compression_ratio: {segment.compression_ratio:.2f} (text: {segment.text.strip()})")
                     continue
 
                 # Just apply basic phonetic dictionary, do NOT suppress or drop words
@@ -178,9 +180,10 @@ async def process_job(job_id: str, content: bytes):
                 if not text_clean:
                     continue
 
-                # Require at least 3 real words to avoid keeping noise fragments like "the not" or "that me"
+                # Just require 1 valid word, don't drop short sentences!
                 real_words = [w for w in text_clean.split() if len(w) > 1]
-                if len(real_words) < 3:
+                if len(real_words) < 1:
+                    print(f"  [SKIPPED {orig_start_s:.1f}s] no real words found")
                     continue
 
                 # Exact 1:1 original audio timestamps
