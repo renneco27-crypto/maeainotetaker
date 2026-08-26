@@ -42,6 +42,7 @@ class RecordingViewModel(
     private var recordingService: RecordingService? = null
     private var timerJob: Job? = null
     private var transcriptCollectionJob: Job? = null
+    private var currentSessionTimestamp: Long = 0L
 
     init {
         observeTranscripts()
@@ -56,6 +57,12 @@ class RecordingViewModel(
         transcriptCollectionJob = viewModelScope.launch {
             Log.d("RecordingViewModel", "observeTranscripts: STARTING COLLECTION")
             RecordingService.transcriptSharedFlow.collect { segment ->
+                // Only accept segments that belong to the currently active recording session
+                if (!_uiState.value.isRecording || segment.timestamp < currentSessionTimestamp) {
+                    Log.d("RecordingViewModel", "Dropping stale/old session transcript: '${segment.text}'")
+                    return@collect
+                }
+                
                 Log.d("RecordingViewModel", "observeTranscripts: COLLECTED segment: '${segment.text}'")
                 _uiState.update { current ->
                     val exists = current.liveTranscriptSegments.any {
@@ -77,6 +84,7 @@ class RecordingViewModel(
 
     fun startRecording(context: android.content.Context, subject: String) {
         isSaving = false
+        currentSessionTimestamp = System.currentTimeMillis()
         _uiState.update { it.copy(subject = subject, isRecording = true, isPaused = false, error = null, liveTranscriptSegments = emptyList(), elapsedTimeMs = 0L) }
         val intent = Intent(context, RecordingService::class.java).apply {
             action = RecordingService.ACTION_START
@@ -111,6 +119,7 @@ class RecordingViewModel(
     fun stopRecording(context: android.content.Context, onComplete: (Long) -> Unit) {
         if (isSaving) return
         isSaving = true
+        currentSessionTimestamp = 0L
         stopElapsedTimer()
         val intent = Intent(context, RecordingService::class.java).apply {
             action = RecordingService.ACTION_STOP

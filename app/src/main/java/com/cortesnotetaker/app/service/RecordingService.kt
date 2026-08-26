@@ -132,13 +132,27 @@ class RecordingService : Service() {
 
             // Worker 2: Asynchronous Whisper Transcriber
             val networkWhisper = com.cortesnotetaker.app.stt.NetworkWhisperClient()
+            val thisSessionStartTime = recordingStartTime
+            
             launch(Dispatchers.Default) {
                 for (segment in speechQueue) {
-                    val startOffset = maxOf(0L, segment.startMs - recordingStartTime)
-                    val endOffset = maxOf(startOffset, segment.endMs - recordingStartTime)
+                    // If recording was stopped or session changed, discard pending queue immediately
+                    if (pipelineJob == null || !pipelineJob!!.isActive || recordingStartTime != thisSessionStartTime) {
+                        break
+                    }
                     
-                    Log.d("RecordingService", "Sending segment (${segment.pcmData.size} samples) to Hugging Face server...")
+                    val startOffset = maxOf(0L, segment.startMs - thisSessionStartTime)
+                    val endOffset = maxOf(startOffset, segment.endMs - thisSessionStartTime)
+                    
+                    Log.d("RecordingService", "Sending segment (${segment.pcmData.size} samples) to PC server...")
                     val result = networkWhisper.transcribe(segment.pcmData)
+                    
+                    // Double check session is still active after network request returns
+                    if (pipelineJob == null || !pipelineJob!!.isActive || recordingStartTime != thisSessionStartTime) {
+                        Log.d("RecordingService", "Session stopped during network request, discarding transcript.")
+                        break
+                    }
+
                     result?.let { whisperResult ->
                         Log.d("RecordingService", "Server finished transcription: '${whisperResult.text}'")
                         if (whisperResult.text.isNotBlank()) {
@@ -152,10 +166,7 @@ class RecordingService : Service() {
                                 timestamp = System.currentTimeMillis()
                             )
                             Log.d("RecordingService", "EMITTING transcript segment to UI: '${transcriptSegment.text}'")
-                            val subs = transcriptSharedFlow.subscriptionCount.value
-                            Log.d("RecordingService", "Current subscribers to SharedFlow: $subs")
                             transcriptSharedFlow.emit(transcriptSegment)
-                            Log.d("RecordingService", "EMISSION complete")
                         }
                     }
                 }
@@ -181,6 +192,7 @@ class RecordingService : Service() {
     }
 
     private fun handleStop() {
+        recordingStartTime = 0L
         pipelineJob?.cancel()
         pipelineJob = null
         audioCapture.stop()
