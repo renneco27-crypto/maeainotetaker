@@ -129,7 +129,7 @@ class NetworkWhisperClient {
     }
 
     private fun tryHotspotServer(wavBytes: ByteArray): WhisperResult? {
-        val hotspotIps = listOf("192.168.137.1", "192.168.43.1") // Windows Hotspot and common Android gateway
+        val hotspotIps = listOf("10.218.142.107", "192.168.137.1", "192.168.43.1") // Windows Hotspot and common Android gateway
         for (ip in hotspotIps) {
             try {
                 Log.d("NetworkWhisper", "Attempting hotspot server at: $ip")

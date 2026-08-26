@@ -69,24 +69,46 @@ class FileUploaderClient(private val context: Context) {
                     )
                     .build()
 
-                val uploadUrl = if (localServerUrl.endsWith("/transcribe")) {
-                    localServerUrl.replace("/transcribe", "/transcribe_file")
-                } else {
-                    "$localServerUrl/transcribe_file"
+            val candidateUrls = listOf(
+                localServerUrl,
+                "http://10.218.142.107:8000/transcribe",
+                "http://192.168.137.1:8000/transcribe",
+                "http://192.168.43.1:8000/transcribe"
+            ).filter { it.isNotBlank() }.distinct().map {
+                if (it.endsWith("/transcribe")) it.replace("/transcribe", "/transcribe_file") else "$it/transcribe_file"
+            }
+
+            var workingUploadUrl: String? = null
+            var responseBody: String? = null
+
+            for (uploadUrl in candidateUrls) {
+                try {
+                    Log.d("FileUploader", "Attempting upload to: $uploadUrl")
+                    val request = Request.Builder()
+                        .url(uploadUrl)
+                        .post(requestBody)
+                        .build()
+
+                    val response = uploadClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        responseBody = response.body?.string()
+                        workingUploadUrl = uploadUrl
+                        Log.d("FileUploader", "Successfully connected to $uploadUrl")
+                        break
+                    } else {
+                        Log.w("FileUploader", "Server at $uploadUrl returned ${response.code}")
+                    }
+                } catch (e: Exception) {
+                    Log.w("FileUploader", "Failed to reach $uploadUrl: ${e.message}")
                 }
+            }
 
-                val request = Request.Builder()
-                    .url(uploadUrl)
-                    .post(requestBody)
-                    .build()
+            if (workingUploadUrl == null || responseBody == null) {
+                Log.e("FileUploader", "All candidate server URLs unreachable")
+                return@withContext null
+            }
 
-                val response = uploadClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    Log.e("FileUploader", "Upload failed with HTTP code: ${response.code}")
-                    return@withContext null
-                }
-
-                val responseBody = response.body?.string() ?: return@withContext null
+            val uploadUrl = workingUploadUrl
                 val jsonObject = JSONObject(responseBody)
                 val jobId = jsonObject.optString("job_id", "")
                 
