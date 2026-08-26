@@ -143,4 +143,26 @@ class FileUploaderClient(private val context: Context) {
         }
         return@withContext null
     }
+
+    /**
+     * Tells the PC server to immediately abort and halt transcription for this job.
+     */
+    suspend fun cancelJob(jobId: String): Boolean = withContext(Dispatchers.IO) {
+        val baseUrls = getCandidateBaseUrls()
+        val emptyBody = okhttp3.RequestBody.create(null, ByteArray(0))
+        for (baseUrl in baseUrls) {
+            val cancelUrl = "$baseUrl/cancel_job/$jobId"
+            try {
+                val request = Request.Builder().url(cancelUrl).post(emptyBody).build()
+                val response = pollClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    Log.d("FileUploader", "Successfully notified PC to cancel Job: $jobId")
+                    return@withContext true
+                }
+            } catch (e: Exception) {
+                // Try next
+            }
+        }
+        return@withContext false
+    }
 }

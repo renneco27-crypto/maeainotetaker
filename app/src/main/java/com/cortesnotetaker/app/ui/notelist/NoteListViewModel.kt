@@ -29,6 +29,8 @@ class NoteListViewModel(
     private val _importProgress = MutableStateFlow<String?>(null)
     val importProgress = _importProgress.asStateFlow()
 
+    private val activePollingJobs = java.util.concurrent.ConcurrentHashMap<Long, kotlinx.coroutines.Job>()
+
     init {
         loadNotes()
         resumeProcessingNotes()
@@ -47,7 +49,8 @@ class NoteListViewModel(
             val processingNotes = noteRepository.getProcessingNotes()
             for (note in processingNotes) {
                 note.jobId?.let { jobId ->
-                    launch { pollJobUntilDone(note.id, jobId) }
+                    val job = launch { pollJobUntilDone(note.id, jobId) }
+                    activePollingJobs[note.id] = job
                 }
             }
         }
@@ -70,6 +73,20 @@ class NoteListViewModel(
 
     fun deleteNote(id: Long) {
         viewModelScope.launch {
+            // 1. Cancel local polling job
+            activePollingJobs[id]?.cancel()
+            activePollingJobs.remove(id)
+
+            // 2. Notify PC server to immediately stop Whisper inference if still processing
+            val note = noteRepository.getNoteById(id)
+            note?.jobId?.let { jobId ->
+                if (note.status == "processing") {
+                    Log.d("NoteListViewModel", "Aborting ongoing PC transcription for Job ID: $jobId")
+                    fileUploaderClient.cancelJob(jobId)
+                }
+            }
+
+            // 3. Delete from database
             noteRepository.deleteNote(id)
             loadNotes()
         }
@@ -102,7 +119,8 @@ class NoteListViewModel(
                 Log.d("NoteListViewModel", "Note $noteId assigned Job ID: $jobId")
                 noteRepository.updateJobId(noteId, jobId)
                 // 3. Poll in background until finished
-                launch { pollJobUntilDone(noteId, jobId) }
+                val job = launch { pollJobUntilDone(noteId, jobId) }
+                activePollingJobs[noteId] = job
             } else {
                 Log.e("NoteListViewModel", "Upload failed for note $noteId")
                 noteRepository.updateStatus(noteId, "error", false)

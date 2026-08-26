@@ -119,6 +119,11 @@ async def process_job(job_id: str, content: bytes):
             
             collected_segments = []
             for segment in segments:
+                # Check if client requested cancellation
+                if jobs.get(job_id, {}).get("status") == "cancelled":
+                    print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
+                    return ""
+
                 collected_segments.append(segment.text)
                 progress_pct = min(100, int((segment.end / total_duration) * 100)) if total_duration > 0 else 0
                 
@@ -137,6 +142,10 @@ async def process_job(job_id: str, content: bytes):
         # Run the heavy processing in a thread pool
         raw_text = await asyncio.to_thread(run_processing)
         
+        if jobs.get(job_id, {}).get("status") == "cancelled":
+            print(f"🛑 Job {job_id} cleaned up after cancellation.\n")
+            return
+            
         print("--------------------------------------------------")
         print(f"🎉 Job {job_id} Completed Successfully!\n")
         jobs[job_id]["status"] = "completed"
@@ -144,9 +153,10 @@ async def process_job(job_id: str, content: bytes):
         jobs[job_id]["text"] = raw_text
         
     except Exception as e:
-        print(f"Job {job_id} Error: {e}")
-        jobs[job_id]["status"] = "error"
-        jobs[job_id]["error"] = str(e)
+        if jobs.get(job_id, {}).get("status") != "cancelled":
+            print(f"Job {job_id} Error: {e}")
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["error"] = str(e)
     finally:
         # Cleanup temp files
         try:
@@ -162,6 +172,14 @@ async def job_status(job_id: str):
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     return JSONResponse(jobs[job_id])
+
+@app.post("/cancel_job/{job_id}")
+async def cancel_job(job_id: str):
+    if job_id in jobs:
+        jobs[job_id]["status"] = "cancelled"
+        print(f"\n🛑 Cancel request received from phone for Job {job_id}")
+        return JSONResponse({"message": "Job marked as cancelled", "job_id": job_id})
+    return JSONResponse({"error": "Job not found"}, status_code=404)
 
 if __name__ == "__main__":
     import uvicorn
