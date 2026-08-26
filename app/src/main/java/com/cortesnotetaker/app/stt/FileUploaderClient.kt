@@ -14,6 +14,8 @@ import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 
 data class ImportedSegmentResult(
     val startMs: Long,
