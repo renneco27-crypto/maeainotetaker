@@ -20,16 +20,21 @@ recent_context = deque(maxlen=5)
 # Job queue for large file uploads
 jobs = {}
 
-# Load model on startup
-print("Loading faster-whisper model (base)...")
-# 'cuda' will use GPU if available, fallback to 'cpu' if not
+# Load model on startup with maximum C++ CPU threads and parallel workers
+print(f"Loading faster-whisper C++ model (base) across {os.cpu_count()} CPU threads...")
 try:
-    model = WhisperModel("base", device="cuda", compute_type="float16")
+    model = WhisperModel("base", device="cuda", compute_type="float16", cpu_threads=os.cpu_count() or 4)
     print("Loaded on CUDA (GPU)")
 except Exception as e:
-    print(f"CUDA unavailable, running on CPU: {e}")
-    model = WhisperModel("base", device="cpu", compute_type="int8")
-    print("Loaded on CPU (int8)")
+    print(f"CUDA unavailable, running optimized on C++ CPU engine: {e}")
+    model = WhisperModel(
+        "base", 
+        device="cpu", 
+        compute_type="int8", 
+        cpu_threads=os.cpu_count() or 4,
+        num_workers=2
+    )
+    print(f"Loaded on C++ CPU (int8, {os.cpu_count()} threads, 2 workers)")
 
 @app.post("/transcribe")
 async def transcribe(request: Request):
@@ -50,7 +55,11 @@ async def transcribe(request: Request):
             segments, info = model.transcribe(
                 audio_io, 
                 task="transcribe",
-                beam_size=5, 
+                beam_size=1,  # 3-4x faster than beam_size=5 (Greedy search)
+                best_of=1,
+                temperature=0.0,
+                vad_filter=True, # C++ VAD skips non-speech sections instantly
+                condition_on_previous_text=False,
                 initial_prompt=context_prompt
             )
             return " ".join([segment.text for segment in segments]).strip()
@@ -110,12 +119,16 @@ async def process_job(job_id: str, content: bytes):
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            print(f"🧠 Whisper inference starting...")
-            # Transcribe without translating
+            print(f"🧠 Whisper C++ inference starting...")
+            # Transcribe with greedy decoding + VAD filter for maximum speed
             segments, info = model.transcribe(
                 tmp_out_path, 
                 task="transcribe",
-                beam_size=5,
+                beam_size=1,
+                best_of=1,
+                temperature=0.0,
+                vad_filter=True,
+                condition_on_previous_text=False,
                 initial_prompt="Ito ay isang lecture sa Tagalog, Bisaya, at English. Huwag isalin sa Ingles. Isulat nang eksakto kung ano ang sinabi. "
             )
             
