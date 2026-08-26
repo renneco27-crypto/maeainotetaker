@@ -3,7 +3,14 @@ import sys
 import tempfile
 import subprocess
 import concurrent.futures
-import whisperx
+
+# Make sure we can import from pc_server
+sys.path.append(os.path.join(os.path.dirname(__file__), "pc_server"))
+from faster_whisper import WhisperModel
+from phonetic_corrector import corrector
+
+# Vocabulary hint
+VOCAB_PROMPT = "English, Tagalog, Bisaya, Cebuano, Filipino."
 
 def main():
     if len(sys.argv) < 2:
@@ -15,13 +22,19 @@ def main():
         print(f"Error: File '{input_file}' not found.")
         sys.exit(1)
 
-    print("==================================================")
-    print("Loading WhisperX model (base) on CPU...")
-    print("==================================================")
-    
-    # Load WhisperX with CPU and INT8 optimization
-    model = whisperx.load_model("base", "cpu", compute_type="int8")
-    print("✅ WhisperX loaded successfully!")
+    print(f"Loading faster-whisper C++ model (base) across {os.cpu_count()} CPU threads...")
+    try:
+        model = WhisperModel("base", device="cuda", compute_type="float16", cpu_threads=os.cpu_count() or 4)
+        print("Loaded on CUDA (GPU)")
+    except Exception as e:
+        print(f"CUDA unavailable, running optimized on C++ CPU engine")
+        model = WhisperModel(
+            "base", 
+            device="cpu", 
+            compute_type="int8", 
+            cpu_threads=os.cpu_count() or 4,
+            num_workers=2
+        )
 
     print(f"\n📥 Preparing local file: {input_file}")
     
@@ -53,17 +66,45 @@ def main():
         offset_s = chunk_idx * 180.0
         chunk_path = os.path.join(chunk_dir, chunk_file)
             
-        audio_chunk = whisperx.load_audio(chunk_path)
-        # WhisperX automatically uses VAD
-        result = model.transcribe(audio_chunk, batch_size=1)
+        segments_gen, _ = model.transcribe(
+            chunk_path, 
+            task="transcribe",
+            beam_size=5,
+            best_of=5,
+            temperature=0.0,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
+            condition_on_previous_text=True,
+            repetition_penalty=1.2,
+            compression_ratio_threshold=2.4,
+            no_speech_threshold=0.6,
+            initial_prompt=VOCAB_PROMPT
+        )
         
         chunk_results = []
-        for seg in result.get("segments", []):
-            orig_start_s = seg["start"] + offset_s
-            orig_end_s = seg["end"] + offset_s
-            text_clean = seg["text"].strip()
+        recent_sentences = []
+        
+        for segment in segments_gen:
+            orig_start_s = segment.start + offset_s
+            orig_end_s = segment.end + offset_s
             
+            if segment.compression_ratio > 2.4:
+                continue
+                
+            text_clean = corrector.correct_text(segment.text.strip())
             if not text_clean:
+                continue
+                
+            real_words = [w for w in text_clean.split() if len(w) > 1]
+            if len(real_words) < 1:
+                continue
+                
+            recent_sentences.append(text_clean)
+            if len(recent_sentences) > 3:
+                recent_sentences.pop(0)
+                
+            if len(recent_sentences) == 3 and recent_sentences[0] == recent_sentences[1] == recent_sentences[2]:
+                recent_sentences.pop()
                 continue
                 
             chunk_results.append({
@@ -76,7 +117,7 @@ def main():
         
         return chunk_results
 
-    print(f"🧠 Processing {total_chunks} WhisperX chunks in parallel...")
+    print(f"🧠 Processing {total_chunks} chunks in parallel...")
     finished_chunks = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         futures = {executor.submit(process_chunk, idx, f): idx for idx, f in enumerate(chunk_files)}
