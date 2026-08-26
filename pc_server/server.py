@@ -129,11 +129,11 @@ async def process_job(job_id: str, content: bytes):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_out:
                 tmp_out_path = tmp_out.name
                 
-            print(f"⚡ Applying 1.5x FFmpeg speedup to audio...")
-            # Run ffmpeg to speed up 1.5x and convert to 16kHz WAV
+            print(f"⚡ Converting audio to 16kHz mono WAV (1.0x native speed)...")
+            # Run ffmpeg to convert to 16kHz WAV at native 1.0x speed
             cmd = [
                 "ffmpeg", "-y", "-i", tmp_in_path, 
-                "-filter:a", "atempo=1.5", 
+                # "-filter:a", "atempo=1.5",  # Disabled 1.5x speedup per user request
                 "-ar", "16000", "-ac", "1", 
                 tmp_out_path
             ]
@@ -175,9 +175,9 @@ async def process_job(job_id: str, content: bytes):
                 if not text_clean:
                     continue
 
-                # Scale back by 1.5x to match the original unmodified audio timestamps
-                orig_start_ms = int(segment.start * 1.5 * 1000)
-                orig_end_ms = int(segment.end * 1.5 * 1000)
+                # Exact 1:1 original audio timestamps
+                orig_start_ms = int(segment.start * 1000)
+                orig_end_ms = int(segment.end * 1000)
 
                 collected_segments.append({
                     "start_ms": orig_start_ms,
