@@ -38,8 +38,8 @@ except Exception as e:
 
 import numpy as np
 
-# Static clean prompt to guide language detection without causing autoregressive hallucination loops
-STATIC_PROMPT = "Ito ay lecture sa Tagalog, Bisaya, at English. Isulat nang eksakto kung ano ang sinabi. "
+# Vocabulary hints for language guidance (Whisper uses this as vocabulary context, not instructions)
+VOCAB_PROMPT = "Tagalog, Bisaya, Cebuano, Filipino, English."
 
 @app.post("/transcribe")
 async def transcribe(request: Request):
@@ -56,7 +56,7 @@ async def transcribe(request: Request):
             pcm_samples = np.frombuffer(audio_bytes[44:], dtype=np.int16)
             if len(pcm_samples) > 0:
                 rms = np.sqrt(np.mean(pcm_samples.astype(np.float32) ** 2))
-                if rms < 180:  # Silence / very quiet background hiss
+                if rms < 200:  # Silence / very quiet background hiss
                     return JSONResponse({"text": ""})
             
         def run_transcribe():
@@ -70,13 +70,16 @@ async def transcribe(request: Request):
                 vad_filter=True, # Silero VAD skips non-speech sections
                 vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
                 condition_on_previous_text=False, # Prevents looping previous words
-                initial_prompt=STATIC_PROMPT
+                repetition_penalty=1.2, # Penalizes token repetition loops
+                compression_ratio_threshold=2.4, # Drops repetitive hallucinations
+                no_speech_threshold=0.6,
+                initial_prompt=VOCAB_PROMPT
             )
             
             valid_texts = []
             for segment in segments:
-                # Discard segments where model detected high probability of no speech
-                if segment.no_speech_prob > 0.6:
+                # Discard segments with high probability of no speech or repetitive hallucination
+                if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
                 valid_texts.append(segment.text)
                 
@@ -150,7 +153,7 @@ async def process_job(job_id: str, content: bytes):
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
                 no_speech_threshold=0.6,
-                initial_prompt="Ito ay isang lecture sa Tagalog, Bisaya, at English. Huwag isalin sa Ingles. Isulat nang eksakto kung ano ang sinabi. "
+                initial_prompt=VOCAB_PROMPT
             )
             
             total_duration = getattr(info, "duration", 0.0)
