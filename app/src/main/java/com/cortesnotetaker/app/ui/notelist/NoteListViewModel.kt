@@ -18,7 +18,8 @@ import kotlinx.coroutines.launch
 class NoteListViewModel(
     private val noteRepository: NoteRepository,
     private val segmentRepository: SegmentRepository,
-    private val fileUploaderClient: FileUploaderClient
+    private val fileUploaderClient: FileUploaderClient,
+    private val context: android.content.Context
 ) : ViewModel() {
     private val _notes = MutableStateFlow<List<NoteEntity>>(emptyList())
     val notes: StateFlow<List<NoteEntity>> = _notes
@@ -100,17 +101,63 @@ class NoteListViewModel(
     
     fun handleSharedAudioFile(uri: Uri) {
         viewModelScope.launch {
-            // 1. Immediately create the note in "processing" state so it appears in the list right away
+            // 1. Query original file name
+            var displayName = "Imported Lecture"
+            try {
+                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex >= 0) {
+                            val name = cursor.getString(nameIndex)
+                            if (!name.isNullOrBlank()) displayName = name
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("NoteListViewModel", "Could not query display name: ${e.message}")
+            }
+
+            // 2. Copy audio stream to local app files directory so it can be played back offline
+            val ext = displayName.substringAfterLast('.', "media")
+            val localFile = java.io.File(context.filesDir, "imported_${System.currentTimeMillis()}.$ext")
+            try {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    localFile.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.d("NoteListViewModel", "Saved imported audio locally to: ${localFile.absolutePath} (${localFile.length()} bytes)")
+            } catch (e: Exception) {
+                Log.e("NoteListViewModel", "Failed to save imported audio locally: ${e.message}")
+            }
+
+            // 3. Extract exact duration
+            var durationMs = 0L
+            try {
+                if (localFile.exists() && localFile.length() > 0) {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    retriever.setDataSource(localFile.absolutePath)
+                    val durationStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    durationMs = durationStr?.toLongOrNull() ?: 0L
+                    retriever.release()
+                }
+            } catch (e: Exception) {
+                Log.w("NoteListViewModel", "Could not extract duration: ${e.message}")
+            }
+
+            // 4. Create the note in "processing" state with full audio path and duration
             val newNote = NoteEntity(
-                title = "Imported Lecture",
+                title = displayName.substringBeforeLast('.').ifBlank { "Imported Lecture" },
+                audioFilePath = localFile.absolutePath,
+                durationMs = durationMs,
                 createdAt = System.currentTimeMillis(),
                 status = "processing",
                 isUnread = false
             )
             val noteId = noteRepository.insert(newNote)
-            Log.d("NoteListViewModel", "Created processing note with ID: $noteId")
+            Log.d("NoteListViewModel", "Created processing note with ID: $noteId, audio: ${localFile.absolutePath}, duration: ${durationMs}ms")
 
-            // 2. Upload file to PC in background
+            // 5. Upload file to PC in background
             _importProgress.value = "Uploading to PC..."
             val jobId = fileUploaderClient.uploadAudioFile(uri)
             _importProgress.value = null
@@ -118,7 +165,7 @@ class NoteListViewModel(
             if (jobId != null) {
                 Log.d("NoteListViewModel", "Note $noteId assigned Job ID: $jobId")
                 noteRepository.updateJobId(noteId, jobId)
-                // 3. Poll in background until finished
+                // 6. Poll in background until finished
                 val job = launch { pollJobUntilDone(noteId, jobId) }
                 activePollingJobs[noteId] = job
             } else {
