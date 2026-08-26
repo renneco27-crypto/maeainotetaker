@@ -67,9 +67,7 @@ async def transcribe(request: Request):
         segments, info = model.transcribe(
             audio_to_transcribe, 
             beam_size=5, 
-            initial_prompt=context_prompt,
-            no_speech_threshold=0.4,          # Confidence test: drops audio if it's mostly noise/static
-            logprob_threshold=-1.0            # Drops words if confidence is too low
+            initial_prompt=context_prompt
         )
         
         raw_text = " ".join([segment.text for segment in segments]).strip()

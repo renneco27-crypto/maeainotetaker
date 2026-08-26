@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -101,6 +102,44 @@ fun NoteListScreen(
                     actions = {
                         IconButton(onClick = { showSearch = true }) {
                             Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                        
+                        var showMenu by remember { mutableStateOf(false) }
+                        var currentMode by remember { mutableStateOf(com.cortesnotetaker.app.stt.AppSettings.mode) }
+                        
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Settings")
+                            }
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(if (currentMode == com.cortesnotetaker.app.stt.TranscriptionMode.AUTO) "✓ Auto (Dual-Engine)" else "Auto (Dual-Engine)") },
+                                    onClick = {
+                                        com.cortesnotetaker.app.stt.AppSettings.mode = com.cortesnotetaker.app.stt.TranscriptionMode.AUTO
+                                        currentMode = com.cortesnotetaker.app.stt.TranscriptionMode.AUTO
+                                        showMenu = false
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(if (currentMode == com.cortesnotetaker.app.stt.TranscriptionMode.HOTSPOT_ONLY) "✓ Hotspot Only" else "Hotspot Only") },
+                                    onClick = {
+                                        com.cortesnotetaker.app.stt.AppSettings.mode = com.cortesnotetaker.app.stt.TranscriptionMode.HOTSPOT_ONLY
+                                        currentMode = com.cortesnotetaker.app.stt.TranscriptionMode.HOTSPOT_ONLY
+                                        showMenu = false
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(if (currentMode == com.cortesnotetaker.app.stt.TranscriptionMode.CLOUD_ONLY) "✓ Cloud Only (HF)" else "Cloud Only (HF)") },
+                                    onClick = {
+                                        com.cortesnotetaker.app.stt.AppSettings.mode = com.cortesnotetaker.app.stt.TranscriptionMode.CLOUD_ONLY
+                                        currentMode = com.cortesnotetaker.app.stt.TranscriptionMode.CLOUD_ONLY
+                                        showMenu = false
+                                    }
+                                )
+                            }
                         }
                     }
                 )

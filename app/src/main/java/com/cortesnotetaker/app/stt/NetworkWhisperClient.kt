@@ -11,6 +11,12 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
 
+enum class TranscriptionMode { AUTO, HOTSPOT_ONLY, CLOUD_ONLY }
+
+object AppSettings {
+    var mode = TranscriptionMode.AUTO
+}
+
 class NetworkWhisperClient {
     // Official Hugging Face Serverless Inference API for Whisper Large V3 Turbo (Fast & No ZeroGPU limits!)
     private val hfServerUrl = "https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3-turbo"
@@ -26,18 +32,18 @@ class NetworkWhisperClient {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
         
-    // Fast fail client for Local PC (detect quickly if PC is unreachable)
+    // Fast connect client for Local PC, but very long read timeout since CPU inference can take 60+ seconds
     private val localClient = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
         .build()
 
     fun transcribe(pcmData: ShortArray): WhisperResult? {
         val wavBytes = createWavBytes(pcmData, 48000)
         
-        // 1. Try Local PC Server if configured
-        if (localServerUrl.isNotBlank()) {
+        // 1. Try Local PC Server if configured and mode allows it
+        if (localServerUrl.isNotBlank() && AppSettings.mode != TranscriptionMode.CLOUD_ONLY) {
             try {
                 Log.d("NetworkWhisper", "Attempting local PC server at: $localServerUrl")
                 val request = Request.Builder()
@@ -56,14 +62,22 @@ class NetworkWhisperClient {
                     Log.d("NetworkWhisper", "Local PC Transcription success: '$transcript'")
                     return WhisperResult(text = transcript, avgLogProb = 0.0f)
                 } else {
-                    Log.w("NetworkWhisper", "Local PC server returned error (${response.code}). Falling back to HF...")
+                    Log.w("NetworkWhisper", "Local PC server returned error (${response.code}).")
                 }
             } catch (e: Exception) {
-                Log.w("NetworkWhisper", "Local PC server unreachable (Timeout/Offline). Falling back to HF...")
+                Log.w("NetworkWhisper", "Local PC server unreachable (Timeout/Offline).")
+            }
+            
+            if (AppSettings.mode == TranscriptionMode.HOTSPOT_ONLY) {
+                Log.d("NetworkWhisper", "Mode is HOTSPOT_ONLY, attempting backup hotspot IPs...")
+                val result = tryHotspotServer(wavBytes)
+                if (result != null) return result
+                Log.e("NetworkWhisper", "Hotspot Only mode failed. Not falling back to HF.")
+                return null
             }
         }
         
-        // 2. Fallback to Hugging Face
+        // 2. Fallback to Hugging Face (Only runs if AUTO or CLOUD_ONLY)
         try {
             Log.d("NetworkWhisper", "Attempting Hugging Face Serverless API")
             val requestBuilder = Request.Builder()
