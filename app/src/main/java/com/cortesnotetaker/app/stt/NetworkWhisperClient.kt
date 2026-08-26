@@ -43,36 +43,42 @@ class NetworkWhisperClient {
         val wavBytes = createWavBytes(pcmData, 48000)
         
         // 1. Try Local PC Server if configured and mode allows it
-        if (localServerUrl.isNotBlank() && AppSettings.mode != TranscriptionMode.CLOUD_ONLY) {
-            try {
-                Log.d("NetworkWhisper", "Attempting local PC server at: $localServerUrl")
-                val request = Request.Builder()
-                    .url(localServerUrl)
-                    .addHeader("Content-Type", "audio/wav")
-                    .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
-                    .build()
+        if (AppSettings.mode != TranscriptionMode.CLOUD_ONLY) {
+            val candidateUrls = listOf(
+                localServerUrl,
+                "http://10.218.142.107:8000/transcribe",
+                "http://192.168.137.1:8000/transcribe",
+                "http://192.168.43.1:8000/transcribe"
+            ).filter { it.isNotBlank() }.distinct()
+
+            for (serverUrl in candidateUrls) {
+                try {
+                    Log.d("NetworkWhisper", "Attempting local PC server at: $serverUrl")
+                    val request = Request.Builder()
+                        .url(serverUrl)
+                        .addHeader("Content-Type", "audio/wav")
+                        .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
+                        .build()
+                        
+                    val response = localClient.newCall(request).execute()
                     
-                val response = localClient.newCall(request).execute()
-                
-                if (response.isSuccessful) {
-                    val responseBody = response.body?.string() ?: ""
-                    val jsonObject = JSONObject(responseBody)
-                    val transcript = jsonObject.optString("text", "").trim()
-                    
-                    Log.d("NetworkWhisper", "Local PC Transcription success: '$transcript'")
-                    return WhisperResult(text = transcript, avgLogProb = 0.0f)
-                } else {
-                    Log.w("NetworkWhisper", "Local PC server returned error (${response.code}).")
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string() ?: ""
+                        val jsonObject = JSONObject(responseBody)
+                        val transcript = jsonObject.optString("text", "").trim()
+                        
+                        Log.d("NetworkWhisper", "Local PC Transcription success ($serverUrl): '$transcript'")
+                        return WhisperResult(text = transcript, avgLogProb = 0.0f)
+                    } else {
+                        Log.w("NetworkWhisper", "Local PC server at $serverUrl returned error (${response.code}).")
+                    }
+                } catch (e: Exception) {
+                    Log.w("NetworkWhisper", "Local PC server at $serverUrl unreachable (${e.message}).")
                 }
-            } catch (e: Exception) {
-                Log.w("NetworkWhisper", "Local PC server unreachable (Timeout/Offline).")
             }
             
             if (AppSettings.mode == TranscriptionMode.HOTSPOT_ONLY) {
-                Log.d("NetworkWhisper", "Mode is HOTSPOT_ONLY, attempting backup hotspot IPs...")
-                val result = tryHotspotServer(wavBytes)
-                if (result != null) return result
-                Log.e("NetworkWhisper", "Hotspot Only mode failed. Not falling back to HF.")
+                Log.e("NetworkWhisper", "Hotspot Only mode failed. All candidate URLs unreachable. Not falling back to HF.")
                 return null
             }
         }
