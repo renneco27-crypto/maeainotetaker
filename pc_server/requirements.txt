@@ -3,3 +3,5 @@ uvicorn
 faster-whisper
 python-multipart
 language-tool-python
+noisereduce
+soundfile

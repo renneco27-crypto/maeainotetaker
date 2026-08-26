@@ -5,16 +5,11 @@ from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
 
 from collections import deque
-import language_tool_python
 
 app = FastAPI(title="Local PC Whisper Server")
 
 # Rolling memory of the last few transcribed segments to provide context to Whisper
 recent_context = deque(maxlen=5)
-
-# Initialize the grammar and context correction tool
-print("Loading LanguageTool for contextual correction...")
-lang_tool = language_tool_python.LanguageTool('en-US')
 
 # Load model on startup
 print("Loading faster-whisper model (small)...")
@@ -40,26 +35,53 @@ async def transcribe(request: Request):
         
         start_time = time.time()
         
-        # Build the context prompt from recent history
-        context_prompt = " ".join(recent_context) if recent_context else None
+        try:
+            # Try to read the WAV file and apply spectral noise reduction
+            import soundfile as sf
+            import noisereduce as nr
+            import numpy as np
+            
+            # Read audio data from the BytesIO object
+            audio_io.seek(0)
+            data, rate = sf.read(audio_io)
+            
+            # Apply noise reduction (spectral gating) to remove fans/hiss/room noise
+            reduced_noise = nr.reduce_noise(y=data, sr=rate, prop_decrease=0.8)
+            
+            # Write the cleaned audio back to a new BytesIO object
+            clean_audio_io = io.BytesIO()
+            sf.write(clean_audio_io, reduced_noise, rate, format='WAV')
+            clean_audio_io.seek(0)
+            audio_to_transcribe = clean_audio_io
+        except Exception as e:
+            print(f"Noise reduction skipped: {e}")
+            audio_io.seek(0)
+            audio_to_transcribe = audio_io
         
-        # Transcribe (auto-detect language) using past context
-        segments, info = model.transcribe(audio_io, beam_size=5, initial_prompt=context_prompt)
+        # Build the context prompt from recent history
+        context_prompt = "This is a lecture in Tagalog (Filipino), Cebuano (Bisaya), and English. "
+        if recent_context:
+            context_prompt += " ".join(recent_context)
+        
+        # Transcribe using anti-hallucination parameters
+        segments, info = model.transcribe(
+            audio_to_transcribe, 
+            beam_size=5, 
+            initial_prompt=context_prompt,
+            no_speech_threshold=0.4,          # Confidence test: drops audio if it's mostly noise/static
+            logprob_threshold=-1.0            # Drops words if confidence is too low
+        )
         
         raw_text = " ".join([segment.text for segment in segments]).strip()
         
-        # Post-process: Correct contextual spelling and grammar mistakes
-        corrected_text = lang_tool.correct(raw_text) if raw_text else ""
-        
         # Add the new transcribed text to our rolling memory context
-        if corrected_text:
-            recent_context.append(corrected_text)
+        if raw_text:
+            recent_context.append(raw_text)
             
         print(f"Transcribed in {time.time() - start_time:.2f}s:")
         print(f"  Raw: {raw_text}")
-        print(f"  Fixed: {corrected_text}")
         
-        return JSONResponse({"text": corrected_text})
+        return JSONResponse({"text": raw_text})
         
     except Exception as e:
         print(f"Error during transcription: {e}")

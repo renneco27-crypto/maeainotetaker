@@ -6,7 +6,7 @@ from faster_whisper import WhisperModel
 import spaces
 
 print("Loading Whisper model...")
-model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+model = WhisperModel("small", device="cpu", compute_type="int8")
 print("Model loaded.")
 
 @spaces.GPU(duration=60)
@@ -17,7 +17,7 @@ def transcribe_base64(b64_audio):
         tmp_path = tmp.name
         
     try:
-        segments, _ = model.transcribe(tmp_path, language="en", beam_size=1)
+        segments, _ = model.transcribe(tmp_path, beam_size=1, initial_prompt="This is a lecture in Tagalog (Filipino), Cebuano (Bisaya), and English.")
         text = " ".join([segment.text for segment in segments])
         return text.strip()
     finally:

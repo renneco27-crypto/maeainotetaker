@@ -30,8 +30,8 @@ class SileroVadDetector(private val context: Context) {
     private val MAX_SPEECH_DURATION_MS = 15000L // 15 seconds max segment
     private val MIN_SPEECH_DURATION_MS = 250L // Minimum 250ms speech for Whisper
     
-    // Buffer to capture 320ms of audio BEFORE speech is detected (prevents cutting off the first word)
-    private val PRE_SPEECH_PAD_FRAMES = 10 
+    // Buffer to capture ~1 second (30 frames * 32ms) of audio BEFORE speech is detected (prevents cutting off the first word)
+    private val PRE_SPEECH_PAD_FRAMES = 30 
     private val preSpeechBuffer = ArrayDeque<ShortArray>(PRE_SPEECH_PAD_FRAMES)
     
     private var silenceStartMs: Long = 0L

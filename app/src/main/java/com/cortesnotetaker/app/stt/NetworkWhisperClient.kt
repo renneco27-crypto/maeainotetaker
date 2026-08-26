@@ -76,7 +76,19 @@ class NetworkWhisperClient {
             }
 
             val request = requestBuilder.build()
-            val response = hfClient.newCall(request).execute()
+            var response = hfClient.newCall(request).execute()
+            
+            // Handle cold start 503 error (model loading)
+            if (response.code == 503) {
+                Log.d("NetworkWhisper", "HF model is loading, waiting 15 seconds...")
+                Thread.sleep(15000)
+                response = hfClient.newCall(request).execute()
+            }
+            
+            if (response.code == 429) {
+                Log.e("NetworkWhisper", "HF tokens run out! Switching to hotspot with local server...")
+                return tryHotspotServer(wavBytes)
+            }
             
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string()
@@ -95,6 +107,37 @@ class NetworkWhisperClient {
             Log.e("NetworkWhisper", "Failed to contact Hugging Face Inference API", e)
             return null
         }
+    }
+
+    private fun tryHotspotServer(pcmData: ShortArray): WhisperResult? {
+        val wavBytes = createWavBytes(pcmData, 48000)
+        return tryHotspotServer(wavBytes)
+    }
+
+    private fun tryHotspotServer(wavBytes: ByteArray): WhisperResult? {
+        val hotspotIps = listOf("192.168.137.1", "192.168.43.1") // Windows Hotspot and common Android gateway
+        for (ip in hotspotIps) {
+            try {
+                Log.d("NetworkWhisper", "Attempting hotspot server at: $ip")
+                val request = Request.Builder()
+                    .url("http://$ip:8000/transcribe")
+                    .addHeader("Content-Type", "audio/wav")
+                    .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
+                    .build()
+                    
+                val response = localClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val responseBody = response.body?.string() ?: ""
+                    val jsonObject = JSONObject(responseBody)
+                    val transcript = jsonObject.optString("text", "").trim()
+                    Log.d("NetworkWhisper", "Hotspot PC Transcription success: '$transcript'")
+                    return WhisperResult(text = transcript, avgLogProb = 0.0f)
+                }
+            } catch (e: Exception) {
+                // Ignore and try next IP
+            }
+        }
+        return null
     }
 
     private fun createWavBytes(pcmData: ShortArray, sampleRate: Int): ByteArray {
