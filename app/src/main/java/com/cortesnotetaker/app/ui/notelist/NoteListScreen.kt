@@ -104,6 +104,18 @@ fun NoteListScreen(
                             Icon(Icons.Default.Search, contentDescription = "Search")
                         }
                         
+                        val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+                            contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+                        ) { uri ->
+                            if (uri != null) {
+                                viewModel.handleSharedAudioFile(uri)
+                            }
+                        }
+                        
+                        IconButton(onClick = { launcher.launch("audio/*") }) {
+                            Icon(androidx.compose.material.icons.filled.Add, contentDescription = "Import Audio File")
+                        }
+                        
                         var showMenu by remember { mutableStateOf(false) }
                         var currentMode by remember { mutableStateOf(com.cortesnotetaker.app.stt.AppSettings.mode) }
                         
