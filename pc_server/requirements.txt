@@ -6,3 +6,6 @@ language-tool-python
 noisereduce
 soundfile
 symspellpy
+transformers
+torch
+Levenshtein

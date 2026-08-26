@@ -175,17 +175,22 @@ async def process_job(job_id: str, content: bytes):
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
 
-                # Tier 1: High-confidence segment — keep the full sentence as-is
-                if segment.avg_logprob >= -0.5:
-                    text_clean = segment.text.strip()
+                words_with_probs = []
+                if segment.words:
+                    for w in segment.words:
+                        words_with_probs.append({'word': w.word, 'prob': w.probability})
+                else:
+                    # Fallback if no word timestamps
+                    for w in segment.text.strip().split():
+                        words_with_probs.append({'word': w, 'prob': segment.avg_logprob})
 
-                # Tier 2: Medium-confidence — do word-level pruning, keep words >= 0.35 probability
+                # Tier 1: High-confidence segment — keep full sentence, just apply basic phonetic dict
+                if segment.avg_logprob >= -0.5:
+                    text_clean = corrector.correct_text(segment.text.strip())
+
+                # Tier 2: Medium-confidence — use Multilingual AI to fix low-confidence words via context
                 elif segment.avg_logprob >= -0.72:
-                    if segment.words:
-                        confident_words = [w.word for w in segment.words if w.probability >= 0.35]
-                        text_clean = " ".join(confident_words).strip()
-                    else:
-                        text_clean = segment.text.strip()
+                    text_clean = corrector.correct_with_context(words_with_probs)
 
                 # Tier 3: Low-confidence — discard entirely
                 else:
@@ -230,17 +235,8 @@ async def process_job(job_id: str, content: bytes):
             print(f"🛑 Job {job_id} cleaned up after cancellation.\n")
             return
             
-        # Apply Tagalog/Bisaya phonetic correction to each segment
-        processed_segments = []
-        for s in raw_segments:
-            corrected = corrector.correct_text(s["text"])
-            if corrected:
-                processed_segments.append({
-                    "start_ms": s["start_ms"],
-                    "end_ms": s["end_ms"],
-                    "text": corrected
-                })
-        
+        # Processing is already complete, just format for output
+        processed_segments = raw_segments
         final_text = " ".join([s["text"] for s in processed_segments])
         
         print("--------------------------------------------------")

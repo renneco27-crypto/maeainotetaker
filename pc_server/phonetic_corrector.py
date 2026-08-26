@@ -1,7 +1,11 @@
 import json
 import os
 import re
-from typing import Dict, Set
+from typing import Dict, Set, List
+import Levenshtein
+
+# Lazy load transformers to avoid slowing down startup if not used immediately
+mlm_pipeline = None
 
 class PhoneticCorrector:
     def __init__(self, vocab_path: str = None):
@@ -31,12 +35,18 @@ class PhoneticCorrector:
         except Exception as e:
             print(f"[ERROR] Error loading vocabulary: {e}")
 
+    def _init_mlm(self):
+        global mlm_pipeline
+        if mlm_pipeline is None:
+            print(f"[INFO] Loading DistilBERT Multilingual Context AI (might take a moment to download first time)...")
+            from transformers import pipeline
+            mlm_pipeline = pipeline('fill-mask', model='distilbert-base-multilingual-cased', device=-1)
+
     def correct_word(self, token: str) -> str:
         """Corrects known custom terms and explicit phonetic errors while leaving valid words untouched."""
         if not token:
             return token
             
-        # Extract leading/trailing punctuation
         match = re.match(r"^([^\w]*)([\w\-\'\.]+)([^\w]*)$", token, re.UNICODE)
         if not match:
             return token
@@ -44,7 +54,7 @@ class PhoneticCorrector:
         prefix, word, suffix = match.groups()
         lowered = word.lower()
         
-        # 1. Custom terms exact/case-insensitive match (e.g. LecturePal, Prelim, DLSU)
+        # 1. Custom terms exact/case-insensitive match
         for term in self.custom_terms:
             if lowered == term.lower():
                 return f"{prefix}{term}{suffix}"
@@ -54,7 +64,6 @@ class PhoneticCorrector:
             corrected = self.phonetic_map[lowered]
             return f"{prefix}{self._match_case(word, corrected)}{suffix}"
 
-        # Otherwise leave the word exactly as Whisper transcribed it!
         return token
 
     def correct_text(self, text: str) -> str:
@@ -65,6 +74,65 @@ class PhoneticCorrector:
         tokens = text.split()
         corrected_tokens = [self.correct_word(token) for token in tokens]
         return " ".join(corrected_tokens)
+
+    def correct_with_context(self, words_with_probs: List[Dict]) -> str:
+        """
+        Takes a list of {'word': str, 'prob': float}.
+        Uses DistilBERT to predict low-confidence words based on context,
+        picking the prediction that sounds closest to Whisper's raw guess.
+        """
+        # First, apply basic custom terms correction
+        for w in words_with_probs:
+            w['word'] = self.correct_word(w['word'])
+
+        # Identify low confidence words to mask (prob < 0.45)
+        low_conf_indices = [i for i, w in enumerate(words_with_probs) if w['prob'] < 0.45]
+        
+        if not low_conf_indices:
+            return " ".join([w['word'] for w in words_with_probs])
+            
+        self._init_mlm()
+        
+        # We process one mask at a time for better context
+        for idx in low_conf_indices:
+            original_word_clean = re.sub(r"[^\w]", "", words_with_probs[idx]['word'].lower())
+            if not original_word_clean:
+                continue
+
+            # Create masked sentence
+            masked_sentence_parts = []
+            for i, w in enumerate(words_with_probs):
+                if i == idx:
+                    masked_sentence_parts.append("[MASK]")
+                else:
+                    masked_sentence_parts.append(w['word'])
+                    
+            masked_sentence = " ".join(masked_sentence_parts)
+            
+            try:
+                predictions = mlm_pipeline(masked_sentence)
+                best_pred = words_with_probs[idx]['word']
+                best_distance = float('inf')
+                
+                # Check top 5 predictions, pick the one that sounds most similar (Levenshtein distance)
+                for pred in predictions:
+                    pred_word_clean = re.sub(r"[^\w]", "", pred['token_str'].lower())
+                    
+                    # Exact match or very close phonetic edit distance
+                    dist = Levenshtein.distance(original_word_clean, pred_word_clean)
+                    
+                    # If it's a good contextual guess and phonetically similar (distance <= 2)
+                    if dist <= 2 and dist < best_distance:
+                        best_distance = dist
+                        best_pred = pred['token_str']
+                        
+                # Update word if we found a better contextual replacement
+                if best_distance <= 2:
+                    words_with_probs[idx]['word'] = best_pred
+            except Exception as e:
+                print(f"[WARN] Masked LM failed on sentence: {e}")
+                
+        return " ".join([w['word'] for w in words_with_probs]).strip()
 
     def _match_case(self, original: str, replacement: str) -> str:
         """Transfers capitalization from the original token to the replacement."""
