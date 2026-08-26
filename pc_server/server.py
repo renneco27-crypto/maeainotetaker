@@ -73,28 +73,39 @@ async def transcribe(request: Request):
                 repetition_penalty=1.2, # Penalizes token repetition loops
                 compression_ratio_threshold=2.4, # Drops repetitive hallucinations
                 no_speech_threshold=0.6,
-                log_prob_threshold=-0.6,  # Drop low-confidence segments
+                word_timestamps=True,   # Per-word confidence scores for BERT
                 initial_prompt=VOCAB_PROMPT
             )
             
             valid_texts = []
             for segment in segments:
-                # Discard segments with high probability of no speech, repetitive hallucination, or low confidence
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
-                if segment.avg_logprob < -0.65:
-                    continue
-                valid_texts.append(segment.text)
+                    
+                words_with_probs = []
+                if segment.words:
+                    for w in segment.words:
+                        words_with_probs.append({'word': w.word, 'prob': w.probability})
+                else:
+                    for w in segment.text.strip().split():
+                        words_with_probs.append({'word': w, 'prob': segment.avg_logprob})
+
+                # If the overall segment is very confident, just apply basic phonetic corrections
+                if segment.avg_logprob >= -0.3:
+                    text_clean = corrector.correct_text(segment.text.strip())
+                else:
+                    # Otherwise, use Multilingual AI to fix low-confidence words via context
+                    text_clean = corrector.correct_with_context(words_with_probs)
+
+                if text_clean:
+                    valid_texts.append(text_clean)
                 
             return " ".join(valid_texts).strip()
         
-        raw_text = await asyncio.to_thread(run_transcribe)
+        corrected_text = await asyncio.to_thread(run_transcribe)
         
-        if not raw_text:
+        if not corrected_text:
             return JSONResponse({"text": ""})
-        
-        # Apply Tagalog/Bisaya phonetic and syllable correction
-        corrected_text = corrector.correct_text(raw_text)
         
         print(f"[LIVE] Transcribed ({time.time() - start_time:.2f}s): {corrected_text}")
         
