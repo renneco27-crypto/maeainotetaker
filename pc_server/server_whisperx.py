@@ -4,6 +4,7 @@ import uuid
 import asyncio
 import tempfile
 import os
+import subprocess
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 import whisperx
