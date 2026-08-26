@@ -137,7 +137,7 @@ async def process_job(job_id: str, content: bytes):
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             print(f"🧠 Whisper C++ inference starting...")
-            # Transcribe with greedy decoding + VAD filter for maximum speed
+            # Transcribe with greedy decoding, VAD, and anti-repetition guards
             segments, info = model.transcribe(
                 tmp_out_path, 
                 task="transcribe",
@@ -145,7 +145,11 @@ async def process_job(job_id: str, content: bytes):
                 best_of=1,
                 temperature=0.0,
                 vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
                 condition_on_previous_text=False,
+                repetition_penalty=1.2,
+                compression_ratio_threshold=2.4,
+                no_speech_threshold=0.6,
                 initial_prompt="Ito ay isang lecture sa Tagalog, Bisaya, at English. Huwag isalin sa Ingles. Isulat nang eksakto kung ano ang sinabi. "
             )
             
@@ -159,6 +163,10 @@ async def process_job(job_id: str, content: bytes):
                 if jobs.get(job_id, {}).get("status") == "cancelled":
                     print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
                     return ""
+
+                # Skip hallucinated silence or repetition loops
+                if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
+                    continue
 
                 collected_segments.append(segment.text)
                 progress_pct = min(100, int((segment.end / total_duration) * 100)) if total_duration > 0 else 0
