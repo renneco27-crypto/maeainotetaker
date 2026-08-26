@@ -131,100 +131,120 @@ async def process_job(job_id: str, content: bytes):
                 tmp_out_path = tmp_out.name
                 
             print(f"⚡ Converting audio to 16kHz mono WAV (1.0x native speed)...")
-            # Run ffmpeg to convert to 16kHz WAV at native 1.0x speed
+            # Run ffmpeg to split into 3-minute chunks
+            chunk_dir = tempfile.mkdtemp()
+            chunk_pattern = os.path.join(chunk_dir, "chunk_%03d.wav")
             cmd = [
                 "ffmpeg", "-y", "-i", tmp_in_path, 
-                # "-filter:a", "atempo=1.5",  # Disabled 1.5x speedup per user request
+                "-f", "segment", "-segment_time", "180",
                 "-ar", "16000", "-ac", "1", 
-                tmp_out_path
+                chunk_pattern
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            print(f"🧠 Whisper C++ inference starting...")
-            # word_timestamps=True gives per-word probability so we can drop only vague words, not whole sentences
-            segments, info = model.transcribe(
-                tmp_out_path, 
-                task="transcribe",
-                beam_size=5,  # Maximum accuracy (slower but checks multiple paths)
-                best_of=5,
-                temperature=0.0,
-                vad_filter=True,  # Re-enabled VAD to stop the massive hallucination loops
-                vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
-                condition_on_previous_text=True,
-                repetition_penalty=1.2,
-                compression_ratio_threshold=2.4,
-                no_speech_threshold=0.6,
-                initial_prompt=VOCAB_PROMPT
-            )
+            # Get audio duration to calculate total progress
+            cmd_probe = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", tmp_in_path]
+            probe_out = subprocess.run(cmd_probe, stdout=subprocess.PIPE, text=True).stdout
+            total_duration = float(probe_out.strip()) if probe_out.strip() else 0.0
             
-            total_duration = getattr(info, "duration", 0.0)
             print(f"⏱️ Total Audio Duration: {total_duration:.1f}s")
             print("--------------------------------------------------")
             
+            chunk_files = sorted([f for f in os.listdir(chunk_dir) if f.endswith(".wav")])
+            total_chunks = len(chunk_files)
+            
             collected_segments = []
-            # Keep track of recent sentences to block 3x hallucinations
-            recent_sentences = []
-
-            for segment in segments:
-                # Check if client requested cancellation
+            
+            import concurrent.futures
+            
+            # Helper to process a single chunk
+            def process_chunk(chunk_idx, chunk_file):
+                offset_s = chunk_idx * 180.0
+                chunk_path = os.path.join(chunk_dir, chunk_file)
+                
+                # Check if cancelled before starting
                 if jobs.get(job_id, {}).get("status") == "cancelled":
-                    print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
                     return []
-
-                orig_start_s = segment.start
-                orig_end_s = segment.end
-
-                # Skip hallucinated silence or repetition loops at segment level
-                if segment.compression_ratio > 2.4:
-                    print(f"  [SKIPPED {orig_start_s:.1f}s] high compression_ratio: {segment.compression_ratio:.2f} (text: {segment.text.strip()})")
-                    continue
-
-                # Just apply basic phonetic dictionary, do NOT suppress or drop words
-                text_clean = corrector.correct_text(segment.text.strip())
-
-                if not text_clean:
-                    continue
-
-                # Just require 1 valid word, don't drop short sentences!
-                real_words = [w for w in text_clean.split() if len(w) > 1]
-                if len(real_words) < 1:
-                    print(f"  [SKIPPED {orig_start_s:.1f}s] no real words found")
-                    continue
-
-                # Check if this exact sentence has repeated 3 times in a row (Hallucination blocker)
-                recent_sentences.append(text_clean)
-                if len(recent_sentences) > 3:
-                    recent_sentences.pop(0)
+                    
+                segments_gen, _ = model.transcribe(
+                    chunk_path, 
+                    task="transcribe",
+                    beam_size=5,
+                    best_of=5,
+                    temperature=0.0,
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
+                    condition_on_previous_text=True,
+                    repetition_penalty=1.2,
+                    compression_ratio_threshold=2.4,
+                    no_speech_threshold=0.6,
+                    initial_prompt=VOCAB_PROMPT
+                )
                 
-                if len(recent_sentences) == 3 and recent_sentences[0] == recent_sentences[1] == recent_sentences[2]:
-                    print(f"  [SKIPPED {orig_start_s:.1f}s] blocked 3x repetition loop: {text_clean}")
-                    # Pop the last one so we don't permanently block the text if they actually said it again later,
-                    # but it breaks the immediate hallucination loop.
-                    recent_sentences.pop()
-                    continue
+                chunk_results = []
+                recent_sentences = []
+                
+                for segment in segments_gen:
+                    if jobs.get(job_id, {}).get("status") == "cancelled":
+                        break
+                        
+                    orig_start_s = segment.start + offset_s
+                    orig_end_s = segment.end + offset_s
+                    
+                    if segment.compression_ratio > 2.4:
+                        continue
+                        
+                    text_clean = corrector.correct_text(segment.text.strip())
+                    if not text_clean:
+                        continue
+                        
+                    real_words = [w for w in text_clean.split() if len(w) > 1]
+                    if len(real_words) < 1:
+                        continue
+                        
+                    recent_sentences.append(text_clean)
+                    if len(recent_sentences) > 3:
+                        recent_sentences.pop(0)
+                        
+                    if len(recent_sentences) == 3 and recent_sentences[0] == recent_sentences[1] == recent_sentences[2]:
+                        recent_sentences.pop()
+                        continue
+                        
+                    chunk_results.append({
+                        "start_ms": int(orig_start_s * 1000),
+                        "end_ms": int(orig_end_s * 1000),
+                        "text": text_clean
+                    })
+                    
+                    # Print live output (will be slightly interleaved due to threads)
+                    print(f"[Thread-{chunk_idx}] {orig_start_s:5.1f}s -> {orig_end_s:5.1f}s | {text_clean}")
+                
+                return chunk_results
 
-                # Exact 1:1 original audio timestamps
-                orig_start_ms = int(segment.start * 1000)
-                orig_end_ms = int(segment.end * 1000)
-
-                collected_segments.append({
-                    "start_ms": orig_start_ms,
-                    "end_ms": orig_end_ms,
-                    "text": text_clean
-                })
+            print(f"🧠 Processing {total_chunks} chunks in parallel...")
+            
+            # Process chunks in parallel using max 2 workers (matching num_workers in CTranslate2)
+            finished_chunks = 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                futures = {executor.submit(process_chunk, idx, f): idx for idx, f in enumerate(chunk_files)}
                 
-                progress_pct = min(100, int((segment.end / total_duration) * 100)) if total_duration > 0 else 0
-                
-                # Visual terminal progress bar
-                bar_len = 20
-                filled_len = int(bar_len * progress_pct / 100)
-                bar = "█" * filled_len + "░" * (bar_len - filled_len)
-                
-                print(f"[{bar}] {progress_pct:3d}% | {orig_start_ms/1000:5.1f}s -> {orig_end_ms/1000:5.1f}s | {text_clean}")
-                
-                # Update progress for phone polling
-                jobs[job_id]["progress"] = progress_pct
-                
+                for future in concurrent.futures.as_completed(futures):
+                    if jobs.get(job_id, {}).get("status") == "cancelled":
+                        print(f"\n🛑 Job {job_id} was cancelled by user. Stopping immediately.")
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        return []
+                        
+                    chunk_segments = future.result()
+                    collected_segments.extend(chunk_segments)
+                    
+                    finished_chunks += 1
+                    progress_pct = min(100, int((finished_chunks / total_chunks) * 100))
+                    jobs[job_id]["progress"] = progress_pct
+                    print(f"✅ Chunk finished! Total Progress: {progress_pct}%")
+            
+            # Sort all segments chronologically by their global timestamp
+            collected_segments.sort(key=lambda x: x["start_ms"])
+            
             return collected_segments
 
         # Run the heavy processing in a thread pool
