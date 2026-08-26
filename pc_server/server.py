@@ -67,7 +67,8 @@ async def transcribe(request: Request):
                 beam_size=5,
                 best_of=5,
                 temperature=0.0,
-                vad_filter=False,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=1000, speech_pad_ms=150),
                 condition_on_previous_text=True, # Allow context to form full sentences
                 repetition_penalty=1.2, # Penalizes token repetition loops
                 compression_ratio_threshold=2.4, # Drops repetitive hallucinations
@@ -147,7 +148,8 @@ async def process_job(job_id: str, content: bytes):
                 beam_size=5,  # Maximum accuracy (slower but checks multiple paths)
                 best_of=5,
                 temperature=0.0,
-                vad_filter=False,  # DO NOT cut audio, let Whisper hear everything
+                vad_filter=True,  # Prevent 30-second hallucination loops during silence
+                vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
                 condition_on_previous_text=True,
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
