@@ -113,7 +113,7 @@ fun NoteListScreen(
                         }
                         
                         IconButton(onClick = { launcher.launch("audio/*") }) {
-                            Icon(androidx.compose.material.icons.filled.Add, contentDescription = "Import Audio File")
+                            Icon(Icons.Default.Add, contentDescription = "Import Audio File")
                         }
                         
                         var showMenu by remember { mutableStateOf(false) }

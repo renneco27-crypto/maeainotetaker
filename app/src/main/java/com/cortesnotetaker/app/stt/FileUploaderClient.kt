@@ -12,7 +12,9 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 class FileUploaderClient(private val context: Context) {
     
@@ -32,93 +34,108 @@ class FileUploaderClient(private val context: Context) {
         .build()
 
     suspend fun uploadAndTranscribe(uri: Uri, onProgress: (String) -> Unit): String? {
-        if (localServerUrl.isBlank()) {
-            Log.e("FileUploader", "Local PC server URL is not configured")
-            return null
-        }
-        
-        try {
-            // 1. Copy the shared URI to a temporary local file so OkHttp can read it
-            onProgress("Preparing file...")
-            val tempFile = File(context.cacheDir, "shared_upload.media")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
+        return withContext(Dispatchers.IO) {
+            if (localServerUrl.isBlank()) {
+                Log.e("FileUploader", "Local PC server URL is not configured")
+                return@withContext null
+            }
+            
+            try {
+                // 1. Copy the shared URI to a temporary local file so OkHttp can read it
+                Log.d("FileUploader", "Preparing file from URI: $uri")
+                onProgress("Preparing file...")
+                val tempFile = File(context.cacheDir, "shared_upload.media")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(tempFile).use { output ->
+                        input.copyTo(output)
+                    }
                 }
-            }
-            
-            if (!tempFile.exists()) return null
-
-            // 2. Upload the file to POST /transcribe_file
-            onProgress("Uploading to PC...")
-            val requestBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart(
-                    "file", 
-                    tempFile.name, 
-                    tempFile.asRequestBody("application/octet-stream".toMediaTypeOrNull())
-                )
-                .build()
-
-            val uploadUrl = if (localServerUrl.endsWith("/transcribe")) {
-                localServerUrl.replace("/transcribe", "/transcribe_file")
-            } else {
-                "$localServerUrl/transcribe_file"
-            }
-
-            val request = Request.Builder()
-                .url(uploadUrl)
-                .post(requestBody)
-                .build()
-
-            val response = uploadClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.e("FileUploader", "Upload failed: ${response.code}")
-                return null
-            }
-
-            val responseBody = response.body?.string() ?: return null
-            val jsonObject = JSONObject(responseBody)
-            val jobId = jsonObject.optString("job_id", "")
-            
-            if (jobId.isBlank()) return null
-            
-            // 3. Poll for status
-            val statusUrl = uploadUrl.replace("transcribe_file", "job_status/$jobId")
-            
-            while (true) {
-                onProgress("PC is transcribing at 1.5x speed...")
-                delay(3000) // Poll every 3 seconds
                 
-                val statusReq = Request.Builder().url(statusUrl).get().build()
-                val statusRes = pollClient.newCall(statusReq).execute()
+                if (!tempFile.exists() || tempFile.length() == 0L) {
+                    Log.e("FileUploader", "Temp file is missing or empty")
+                    return@withContext null
+                }
+
+                Log.d("FileUploader", "File prepared (${tempFile.length()} bytes). Uploading...")
+
+                // 2. Upload the file to POST /transcribe_file
+                onProgress("Uploading to PC...")
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart(
+                        "file", 
+                        tempFile.name, 
+                        tempFile.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+                    )
+                    .build()
+
+                val uploadUrl = if (localServerUrl.endsWith("/transcribe")) {
+                    localServerUrl.replace("/transcribe", "/transcribe_file")
+                } else {
+                    "$localServerUrl/transcribe_file"
+                }
+
+                val request = Request.Builder()
+                    .url(uploadUrl)
+                    .post(requestBody)
+                    .build()
+
+                val response = uploadClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    Log.e("FileUploader", "Upload failed with HTTP code: ${response.code}")
+                    return@withContext null
+                }
+
+                val responseBody = response.body?.string() ?: return@withContext null
+                val jsonObject = JSONObject(responseBody)
+                val jobId = jsonObject.optString("job_id", "")
                 
-                if (statusRes.isSuccessful) {
-                    val statusBody = statusRes.body?.string() ?: ""
-                    val statusJson = JSONObject(statusBody)
-                    val status = statusJson.optString("status")
+                if (jobId.isBlank()) {
+                    Log.e("FileUploader", "No job_id returned by server")
+                    return@withContext null
+                }
+                
+                Log.d("FileUploader", "Upload success. Job ID: $jobId. Starting status polling...")
+
+                // 3. Poll for status
+                val statusUrl = uploadUrl.replace("transcribe_file", "job_status/$jobId")
+                
+                while (true) {
+                    onProgress("PC is transcribing at 1.5x speed...")
+                    delay(3000) // Poll every 3 seconds
                     
-                    when (status) {
-                        "completed" -> {
-                            tempFile.delete()
-                            return statusJson.optString("text")
-                        }
-                        "error" -> {
-                            val err = statusJson.optString("error")
-                            Log.e("FileUploader", "PC Job Error: $err")
-                            tempFile.delete()
-                            return null
-                        }
-                        "processing" -> {
-                            // Keep waiting
+                    val statusReq = Request.Builder().url(statusUrl).get().build()
+                    val statusRes = pollClient.newCall(statusReq).execute()
+                    
+                    if (statusRes.isSuccessful) {
+                        val statusBody = statusRes.body?.string() ?: ""
+                        val statusJson = JSONObject(statusBody)
+                        val status = statusJson.optString("status")
+                        
+                        when (status) {
+                            "completed" -> {
+                                val text = statusJson.optString("text")
+                                Log.d("FileUploader", "Transcription completed: $text")
+                                tempFile.delete()
+                                return@withContext text
+                            }
+                            "error" -> {
+                                val err = statusJson.optString("error")
+                                Log.e("FileUploader", "PC Job Error: $err")
+                                tempFile.delete()
+                                return@withContext null
+                            }
+                            "processing" -> {
+                                Log.d("FileUploader", "Job $jobId is still processing...")
+                            }
                         }
                     }
                 }
+            } catch (e: Exception) {
+                Log.e("FileUploader", "Exception during upload", e)
+                return@withContext null
             }
-            
-        } catch (e: Exception) {
-            Log.e("FileUploader", "Exception during upload", e)
-            return null
+            null
         }
     }
 }
