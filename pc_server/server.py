@@ -68,8 +68,8 @@ async def transcribe(request: Request):
                 best_of=1,
                 temperature=0.0,
                 vad_filter=True, # Silero VAD skips non-speech sections
-                vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=150),
-                condition_on_previous_text=False, # Prevents looping previous words
+                vad_parameters=dict(min_silence_duration_ms=1000, speech_pad_ms=150),
+                condition_on_previous_text=True, # Allow context to form full sentences
                 repetition_penalty=1.2, # Penalizes token repetition loops
                 compression_ratio_threshold=2.4, # Drops repetitive hallucinations
                 no_speech_threshold=0.6,
@@ -149,8 +149,8 @@ async def process_job(job_id: str, content: bytes):
                 best_of=1,
                 temperature=0.0,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=200),
-                condition_on_previous_text=False,
+                vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
+                condition_on_previous_text=True,
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
                 no_speech_threshold=0.6,
