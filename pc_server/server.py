@@ -38,8 +38,8 @@ except Exception as e:
 
 import numpy as np
 
-# Vocabulary hints for language guidance (Whisper uses this as vocabulary context, not instructions)
-VOCAB_PROMPT = "Tagalog, Bisaya, Cebuano, Filipino, English."
+# Vocabulary hint: English first, then Tagalog/Bisaya for mixed-language Philippine lectures
+VOCAB_PROMPT = "English, Tagalog, Bisaya, Cebuano, Filipino."
 
 @app.post("/transcribe")
 async def transcribe(request: Request):
@@ -73,13 +73,16 @@ async def transcribe(request: Request):
                 repetition_penalty=1.2, # Penalizes token repetition loops
                 compression_ratio_threshold=2.4, # Drops repetitive hallucinations
                 no_speech_threshold=0.6,
+                log_prob_threshold=-0.6,  # Drop low-confidence segments
                 initial_prompt=VOCAB_PROMPT
             )
             
             valid_texts = []
             for segment in segments:
-                # Discard segments with high probability of no speech or repetitive hallucination
+                # Discard segments with high probability of no speech, repetitive hallucination, or low confidence
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
+                    continue
+                if segment.avg_logprob < -0.65:
                     continue
                 valid_texts.append(segment.text)
                 
@@ -153,6 +156,7 @@ async def process_job(job_id: str, content: bytes):
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
                 no_speech_threshold=0.6,
+                log_prob_threshold=-0.6,   # Drop anything Whisper is less than ~55% confident about
                 initial_prompt=VOCAB_PROMPT
             )
             
@@ -167,12 +171,21 @@ async def process_job(job_id: str, content: bytes):
                     print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
                     return []
 
-                # Skip hallucinated silence or repetition loops
+                # Skip hallucinated silence, repetition loops, or low-confidence segments
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
+                    continue
+
+                # Skip low-confidence segments (avg_logprob < -0.65 means Whisper is very unsure)
+                if segment.avg_logprob < -0.65:
                     continue
 
                 text_clean = segment.text.strip()
                 if not text_clean:
+                    continue
+
+                # Skip ultra-short segments that are usually noise/junk (less than 2 real words)
+                real_words = [w for w in text_clean.split() if len(w) > 1]
+                if len(real_words) < 2:
                     continue
 
                 # Exact 1:1 original audio timestamps
