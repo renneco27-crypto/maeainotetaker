@@ -143,7 +143,7 @@ async def process_job(job_id: str, content: bytes):
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
             print(f"🧠 Whisper C++ inference starting...")
-            # Transcribe with greedy decoding, VAD, and anti-repetition guards
+            # word_timestamps=True gives per-word probability so we can drop only vague words, not whole sentences
             segments, info = model.transcribe(
                 tmp_out_path, 
                 task="transcribe",
@@ -156,7 +156,7 @@ async def process_job(job_id: str, content: bytes):
                 repetition_penalty=1.2,
                 compression_ratio_threshold=2.4,
                 no_speech_threshold=0.6,
-                log_prob_threshold=-0.6,   # Drop anything Whisper is less than ~55% confident about
+                word_timestamps=True,   # Per-word confidence scores
                 initial_prompt=VOCAB_PROMPT
             )
             
@@ -171,21 +171,32 @@ async def process_job(job_id: str, content: bytes):
                     print(f"\n🛑 Job {job_id} was cancelled by user. Stopping Whisper transcription immediately.")
                     return []
 
-                # Skip hallucinated silence, repetition loops, or low-confidence segments
+                # Skip hallucinated silence or repetition loops at segment level
                 if segment.no_speech_prob > 0.6 or segment.compression_ratio > 2.4:
                     continue
 
-                # Skip low-confidence segments (avg_logprob < -0.65 means Whisper is very unsure)
-                if segment.avg_logprob < -0.65:
+                # Tier 1: High-confidence segment — keep the full sentence as-is
+                if segment.avg_logprob >= -0.5:
+                    text_clean = segment.text.strip()
+
+                # Tier 2: Medium-confidence — do word-level pruning, keep words >= 0.35 probability
+                elif segment.avg_logprob >= -0.72:
+                    if segment.words:
+                        confident_words = [w.word for w in segment.words if w.probability >= 0.35]
+                        text_clean = " ".join(confident_words).strip()
+                    else:
+                        text_clean = segment.text.strip()
+
+                # Tier 3: Low-confidence — discard entirely
+                else:
                     continue
 
-                text_clean = segment.text.strip()
                 if not text_clean:
                     continue
 
-                # Skip ultra-short segments that are usually noise/junk (less than 2 real words)
+                # Require at least 3 real words to avoid keeping noise fragments like "the not" or "that me"
                 real_words = [w for w in text_clean.split() if len(w) > 1]
-                if len(real_words) < 2:
+                if len(real_words) < 3:
                     continue
 
                 # Exact 1:1 original audio timestamps
