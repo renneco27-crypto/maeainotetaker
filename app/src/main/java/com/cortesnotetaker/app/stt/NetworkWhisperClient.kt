@@ -86,46 +86,65 @@ class NetworkWhisperClient {
         
         // 2. Fallback to Hugging Face (Only runs if AUTO or CLOUD_ONLY)
         try {
-            Log.d("NetworkWhisper", "Attempting Hugging Face Serverless API")
-            val requestBuilder = Request.Builder()
-                .url(hfServerUrl)
-                .addHeader("Content-Type", "audio/wav")
-                .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
+            val hfBase = "https://alibaba2304-lectaaa.hf.space"
+            Log.d("NetworkWhisper", "Attempting Hugging Face Lectaaa ZeroGPU Space")
+            
+            // STEP 1: Upload
+            val uploadBody = okhttp3.MultipartBody.Builder()
+                .setType(okhttp3.MultipartBody.FORM)
+                .addFormDataPart("files", "live_chunk.wav", wavBytes.toRequestBody("application/octet-stream".toMediaType()))
+                .build()
                 
-            if (hfToken.isNotBlank()) {
-                requestBuilder.addHeader("Authorization", "Bearer $hfToken")
-            }
-
-            val request = requestBuilder.build()
-            var response = hfClient.newCall(request).execute()
+            val uploadReq = Request.Builder().url("$hfBase/upload").post(uploadBody).build()
+            val uploadRes = hfClient.newCall(uploadReq).execute()
+            if (!uploadRes.isSuccessful) return null
             
-            // Handle cold start 503 error (model loading)
-            if (response.code == 503) {
-                Log.d("NetworkWhisper", "HF model is loading, waiting 15 seconds...")
-                Thread.sleep(15000)
-                response = hfClient.newCall(request).execute()
+            val uploadJson = org.json.JSONArray(uploadRes.body?.string() ?: "[]")
+            if (uploadJson.length() == 0) return null
+            val uploadedPath = uploadJson.getString(0)
+            
+            // STEP 2: Submit Job
+            val predictBodyStr = "{\"data\": [{\"path\": \"$uploadedPath\"}]}"
+            val predictBody = predictBodyStr.toRequestBody("application/json".toMediaType())
+            val predictReq = Request.Builder().url("$hfBase/call/predict").post(predictBody).build()
+            val predictRes = hfClient.newCall(predictReq).execute()
+            
+            if (!predictRes.isSuccessful) return null
+            val predictResJson = JSONObject(predictRes.body?.string() ?: "{}")
+            val eventId = predictResJson.optString("event_id", "")
+            if (eventId.isEmpty()) return null
+            
+            // STEP 3: Read SSE Stream
+            val sseClient = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
+            val req = Request.Builder().url("$hfBase/call/predict/$eventId").get().build()
+            var finalTranscript = ""
+            
+            sseClient.newCall(req).execute().use { response ->
+                val inputStream = response.body?.byteStream() ?: return null
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(inputStream))
+                var line: String?
+                while (reader.readLine().also { line = it } != null) {
+                    if (line!!.startsWith("data: ")) {
+                        try {
+                            val json = JSONObject(line!!.substring(6))
+                            if (json.optString("msg") == "process_completed") {
+                                val textArr = json.optJSONObject("output")?.optJSONArray("data")
+                                finalTranscript = textArr?.optString(0, "") ?: ""
+                                break
+                            }
+                        } catch (e: Exception) {}
+                    }
+                }
             }
             
-            if (response.code == 429) {
-                Log.e("NetworkWhisper", "HF tokens run out! Switching to hotspot with local server...")
-                return tryHotspotServer(wavBytes)
+            if (finalTranscript.isNotBlank()) {
+                Log.d("NetworkWhisper", "HF Transcription success: '$finalTranscript'")
+                return WhisperResult(text = finalTranscript.trim(), avgLogProb = 0.0f)
             }
-            
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string()
-                Log.e("NetworkWhisper", "HF Inference API error (${response.code}): $errorBody")
-                return null
-            }
-
-            val responseBody = response.body?.string() ?: return null
-            val jsonObject = JSONObject(responseBody)
-            val transcript = jsonObject.optString("text", "").trim()
-            
-            Log.d("NetworkWhisper", "HF Transcription success: '$transcript'")
-            return WhisperResult(text = transcript, avgLogProb = 0.0f)
+            return null
             
         } catch (e: Exception) {
-            Log.e("NetworkWhisper", "Failed to contact Hugging Face Inference API", e)
+            Log.e("NetworkWhisper", "Failed to contact Hugging Face Lectaaa API", e)
             return null
         }
     }
