@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
 from phonetic_corrector import corrector
-from gradio_client import Client, file
+
 
 from collections import deque
 
@@ -151,24 +151,7 @@ async def process_job(job_id: str, content: bytes):
             print(f"⏱️ Total Audio Duration: {total_duration:.1f}s")
             print("--------------------------------------------------")
             
-            # --- HUGGING FACE RELAY (PRIMARY) ---
-            try:
-                print(f"🚀 [PRIMARY] Offloading to Hugging Face A100 GPU (Alibaba2304/Lectaaa)...")
-                client = Client("Alibaba2304/Lectaaa")
-                hf_result = client.predict(
-                    audio_path=file(tmp_in_path),
-                    api_name="/predict"
-                )
-                print(f"☁️ [CLOUD SUCCESS] Hugging Face transcribed perfectly!")
-                return [{
-                    "start_ms": 0,
-                    "end_ms": int(total_duration * 1000),
-                    "text": str(hf_result).strip()
-                }]
-            except Exception as hf_err:
-                print(f"⚠️ [CLOUD FAILED] Hugging Face failed (maybe sleeping?): {hf_err}")
-                print(f"🔄 [FALLBACK] Falling back to local C++ CPU inference...")
-            # ------------------------------------
+
             
             chunk_files = sorted([f for f in os.listdir(chunk_dir) if f.endswith(".wav")])
             total_chunks = len(chunk_files)
