@@ -5,6 +5,8 @@ import subprocess
 import asyncio
 import tempfile
 import os
+import hashlib
+import json
 from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
@@ -171,6 +173,11 @@ async def process_job(job_id: str, content: bytes):
             
 
             
+            # Compute content hash for resume/cache capability
+            file_hash = hashlib.sha256(content).hexdigest()[:16]
+            cache_dir = os.path.join(os.path.dirname(__file__), ".cache_chunks", file_hash)
+            os.makedirs(cache_dir, exist_ok=True)
+            
             chunk_files = sorted([f for f in os.listdir(chunk_dir) if f.endswith(".wav")])
             total_chunks = len(chunk_files)
             
@@ -182,6 +189,17 @@ async def process_job(job_id: str, content: bytes):
             def process_chunk(chunk_idx, chunk_file):
                 offset_s = chunk_idx * 180.0
                 chunk_path = os.path.join(chunk_dir, chunk_file)
+                cache_file = os.path.join(cache_dir, f"chunk_{chunk_idx:03d}.json")
+                
+                # 1. Check if chunk was already transcribed previously (Resume support)
+                if os.path.exists(cache_file):
+                    try:
+                        with open(cache_file, "r", encoding="utf-8") as cf:
+                            cached_res = json.load(cf)
+                            print(f"[Thread-{chunk_idx}] ⚡ Resumed from cache ({len(cached_res)} segments)")
+                            return cached_res
+                    except Exception as e:
+                        print(f"[Thread-{chunk_idx}] Cache read error: {e}")
                 
                 # Check if cancelled before starting
                 if jobs.get(job_id, {}).get("status") == "cancelled":
@@ -243,6 +261,13 @@ async def process_job(job_id: str, content: bytes):
                     # Print live output (will be slightly interleaved due to threads)
                     print(f"[Thread-{chunk_idx}] {orig_start_s:5.1f}s -> {orig_end_s:5.1f}s | {text_clean}")
                 
+                # Save chunk to cache for instant resume if server restarts
+                try:
+                    with open(cache_file, "w", encoding="utf-8") as cf:
+                        json.dump(chunk_results, cf, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    print(f"Failed to cache chunk {chunk_idx}: {e}")
+                
                 return chunk_results
 
             print(f"🧠 Processing {total_chunks} chunks in parallel...")
@@ -260,14 +285,14 @@ async def process_job(job_id: str, content: bytes):
                         
                     chunk_segments = future.result()
                     collected_segments.extend(chunk_segments)
+                    collected_segments.sort(key=lambda x: x["start_ms"])
                     
                     finished_chunks += 1
                     progress_pct = min(100, int((finished_chunks / total_chunks) * 100))
                     jobs[job_id]["progress"] = progress_pct
-                    print(f"✅ Chunk finished! Total Progress: {progress_pct}%")
-            
-            # Sort all segments chronologically by their global timestamp
-            collected_segments.sort(key=lambda x: x["start_ms"])
+                    jobs[job_id]["segments"] = list(collected_segments)
+                    jobs[job_id]["text"] = " ".join([s["text"] for s in collected_segments])
+                    print(f"✅ Chunk finished! Total Progress: {progress_pct}% ({len(collected_segments)} segments saved so far)")
             
             return collected_segments
 

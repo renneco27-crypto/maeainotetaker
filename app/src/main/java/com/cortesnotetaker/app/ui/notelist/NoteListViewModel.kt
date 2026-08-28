@@ -192,38 +192,41 @@ class NoteListViewModel(
 
     private suspend fun pollJobUntilDone(noteId: Long, jobId: String) {
         Log.d("NoteListViewModel", "Starting polling for note $noteId, jobId: $jobId")
+        var savedSegmentCount = 0
         while (true) {
             delay(3000)
             val result = fileUploaderClient.checkJobStatus(jobId)
             if (result != null) {
+                // Progressively save incoming segments as chunks finish
+                if (result.segments.size > savedSegmentCount) {
+                    val newSegments = result.segments.subList(savedSegmentCount, result.segments.size)
+                    val entities = newSegments.map { seg ->
+                        SegmentEntity(
+                            noteId = noteId,
+                            startMs = seg.startMs,
+                            endMs = seg.endMs,
+                            rawTranscript = seg.text,
+                            displayTranscript = seg.text,
+                            isUnclear = false
+                        )
+                    }
+                    segmentRepository.insertAll(entities)
+                    savedSegmentCount = result.segments.size
+                    Log.d("NoteListViewModel", "Saved $savedSegmentCount partial segments to DB for note $noteId")
+                }
+
                 when (result.status) {
                     "completed" -> {
-                        val segments = result.segments
-                        Log.d("NoteListViewModel", "Job $jobId completed with ${segments.size} segments. Saving to database for note $noteId")
-                        if (segments.isNotEmpty()) {
-                            val entities = segments.map { seg ->
-                                SegmentEntity(
-                                    noteId = noteId,
-                                    startMs = seg.startMs,
-                                    endMs = seg.endMs,
-                                    rawTranscript = seg.text,
-                                    displayTranscript = seg.text,
-                                    isUnclear = false
-                                )
-                            }
-                            segmentRepository.insertAll(entities)
-                        } else {
-                            val transcript = result.text ?: ""
-                            if (transcript.isNotBlank()) {
-                                val segment = SegmentEntity(
-                                    noteId = noteId,
-                                    startMs = 0L,
-                                    endMs = 0L,
-                                    rawTranscript = transcript,
-                                    displayTranscript = transcript
-                                )
-                                segmentRepository.insert(segment)
-                            }
+                        // If no segments were parsed, fallback to full text
+                        if (savedSegmentCount == 0 && !result.text.isNullOrBlank()) {
+                            val segment = SegmentEntity(
+                                noteId = noteId,
+                                startMs = 0L,
+                                endMs = 0L,
+                                rawTranscript = result.text,
+                                displayTranscript = result.text
+                            )
+                            segmentRepository.insert(segment)
                         }
                         // Mark as completed and isUnread = true (Green indicator!)
                         noteRepository.updateStatus(noteId, "completed", isUnread = true)
