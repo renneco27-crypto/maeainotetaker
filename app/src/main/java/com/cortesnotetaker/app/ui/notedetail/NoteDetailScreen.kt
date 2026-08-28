@@ -323,8 +323,11 @@ fun TranscriptList(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(segments) { segment ->
+                val isEditing = editingSegmentId == segment.id
                 Card(
-                    onClick = { onSegmentClick(segment) },
+                    onClick = { 
+                        if (!isEditing) onSegmentClick(segment) 
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = if (segments.indexOf(segment) == activeSegmentIndex)
@@ -333,17 +336,73 @@ fun TranscriptList(
                     )
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "${segment.startMs / 1000}s",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = if (segment.isUnclear) "[unclear]" else segment.displayTranscript,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (segment.isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
-                            fontStyle = if (segment.isUnclear) FontStyle.Italic else FontStyle.Normal
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${segment.startMs / 1000}s",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            if (isEditing) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = onSaveEdit,
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Check,
+                                            contentDescription = "Save",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = onCancelEdit,
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            contentDescription = "Cancel",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { onSegmentLongClick(segment) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Edit words",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (isEditing) {
+                            OutlinedTextField(
+                                value = editingTranscript,
+                                onValueChange = onTranscriptChange,
+                                modifier = Modifier.fillMaxWidth(),
+                                textStyle = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            Text(
+                                text = if (segment.isUnclear) "[unclear]" else segment.displayTranscript,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (segment.isUnclear) LecturePalColors.UnclearText else MaterialTheme.colorScheme.onSurface,
+                                fontStyle = if (segment.isUnclear) FontStyle.Italic else FontStyle.Normal
+                            )
+                        }
                     }
                 }
             }
