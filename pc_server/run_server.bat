@@ -5,7 +5,7 @@ echo   NOTE TAKER - UNIFIED SERVER (Wi-Fi + Cloud)
 echo ==============================================
 echo.
 echo Starting PC Server for Local Wi-Fi connections...
-start cmd /k "python pc_server\server.py"
+start /B python pc_server\server.py
 
 echo.
 echo Starting Permanent Internet Tunnel...
