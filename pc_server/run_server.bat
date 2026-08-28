@@ -12,5 +12,5 @@ echo Starting Permanent Internet Tunnel...
 echo This ensures the phone can always reach the PC via:
 echo https://cortes-notetaker.loca.lt
 echo.
-npx localtunnel --port 8000 --subdomain cortes-notetaker
+npx localtunnel --local-host 127.0.0.1 --port 8000 --subdomain cortes-notetaker
 pause

@@ -42,6 +42,10 @@ import numpy as np
 # Vocabulary hint: English first, then Tagalog/Bisaya for mixed-language Philippine lectures
 VOCAB_PROMPT = "English, Tagalog, Bisaya, Cebuano, Filipino."
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "Cortes Note Taker Whisper Server"}
+
 @app.post("/transcribe")
 async def transcribe(request: Request):
     try:
