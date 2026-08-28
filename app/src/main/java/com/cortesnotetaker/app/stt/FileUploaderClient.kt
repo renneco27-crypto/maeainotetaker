@@ -115,6 +115,8 @@ class FileUploaderClient(private val context: Context) {
                     tempFile.name, 
                     tempFile.asRequestBody("application/octet-stream".toMediaTypeOrNull())
                 )
+                .addFormDataPart("subject_preset", com.cortesnotetaker.app.stt.AppSettings.subjectPreset.name)
+                .addFormDataPart("initial_prompt", com.cortesnotetaker.app.stt.AppSettings.subjectPreset.prompt)
                 .build()
 
             val baseUrls = getCandidateBaseUrls()
