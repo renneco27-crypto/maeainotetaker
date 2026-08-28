@@ -13,33 +13,9 @@ import java.util.concurrent.TimeUnit
 
 enum class TranscriptionMode { AUTO, HOTSPOT_ONLY, CLOUD_ONLY }
 
-enum class SubjectPreset(val displayName: String, val prompt: String) {
-    GENERAL(
-        "General / Mixed", 
-        "English, Tagalog, Bisaya, Cebuano, Filipino, lecture, classroom, discussion, professor, student."
-    ),
-    SCIENCE_TECH(
-        "Science & Tech (Sulfur, Porcelain, etc.)", 
-        "English, Tagalog, Bisaya, science, chemistry, physics, biology, technology, gunpowder, sulfur, potassium nitrate, porcelain, elements, compound, equation, experiment, laboratory, hypothesis, reaction, acid, base, molecule, porcelain glass, potash, saltpeter."
-    ),
-    HISTORY_SOCIAL(
-        "History & Social (Egypt, China, etc.)", 
-        "English, Tagalog, Bisaya, history, historical antecedents, civilization, Egypt, Mesopotamia, China, revolution, government, culture, society, artifact, ancient, renaissance, empire, pottery, dynasty, period, shadoof, papyrus, cuneiform, hieroglyphics."
-    ),
-    MATH_ENGINEERING(
-        "Math & Engineering", 
-        "English, Tagalog, Bisaya, mathematics, calculus, algebra, geometry, engineering, formula, theorem, derivative, integral, computation, matrix, variable, function, graph, vector, equation."
-    ),
-    BUSINESS_LAW(
-        "Business, Economics & Law", 
-        "English, Tagalog, Bisaya, business, economics, accounting, finance, management, law, constitution, article, liability, asset, profit, market, contract, jurisprudence."
-    )
-}
-
 object AppSettings {
     var mode = TranscriptionMode.AUTO
     var customTunnelUrl = ""
-    var subjectPreset = SubjectPreset.GENERAL
 }
 
 class NetworkWhisperClient {
@@ -97,8 +73,6 @@ class NetworkWhisperClient {
                     val request = Request.Builder()
                         .url(serverUrl)
                         .addHeader("Content-Type", "audio/wav")
-                        .addHeader("X-Subject-Preset", AppSettings.subjectPreset.name)
-                        .addHeader("X-Initial-Prompt", AppSettings.subjectPreset.prompt)
                         .post(wavBytes.toRequestBody("audio/wav".toMediaType()))
                         .build()
                         

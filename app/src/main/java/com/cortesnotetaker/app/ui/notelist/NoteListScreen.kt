@@ -64,8 +64,6 @@ fun NoteListScreen(
     var searchText by remember { mutableStateOf("") }
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlInput by remember { mutableStateOf(com.cortesnotetaker.app.stt.AppSettings.customTunnelUrl) }
-    var showSubjectDialog by remember { mutableStateOf(false) }
-    var currentSubject by remember { mutableStateOf(com.cortesnotetaker.app.stt.AppSettings.subjectPreset) }
 
     if (showUrlDialog) {
         androidx.compose.material3.AlertDialog(
@@ -88,43 +86,6 @@ fun NoteListScreen(
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { showUrlDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showSubjectDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showSubjectDialog = false },
-            title = { Text("Select Subject / Topic") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    com.cortesnotetaker.app.stt.SubjectPreset.values().forEach { preset ->
-                        androidx.compose.material3.Surface(
-                            onClick = {
-                                com.cortesnotetaker.app.stt.AppSettings.subjectPreset = preset
-                                currentSubject = preset
-                                showSubjectDialog = false
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (currentSubject == preset) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = (if (currentSubject == preset) "● " else "○ ") + preset.displayName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (currentSubject == preset) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showSubjectDialog = false }) { Text("Done") }
             }
         )
     }
@@ -218,13 +179,6 @@ fun NoteListScreen(
                                     }
                                 )
                                 androidx.compose.material3.Divider()
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Topic: ${currentSubject.displayName}") },
-                                    onClick = {
-                                        showMenu = false
-                                        showSubjectDialog = true
-                                    }
-                                )
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text("Set Custom Tunnel URL") },
                                     onClick = {

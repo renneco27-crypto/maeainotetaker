@@ -5,8 +5,7 @@ import subprocess
 import asyncio
 import tempfile
 import os
-from typing import Optional
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from faster_whisper import WhisperModel
 from phonetic_corrector import corrector
@@ -50,16 +49,8 @@ except Exception as e:
 
 import numpy as np
 
-SUBJECT_PROMPTS = {
-    "GENERAL": "English, Tagalog, Bisaya, Cebuano, Filipino, lecture, classroom, discussion, professor, student.",
-    "SCIENCE_TECH": "English, Tagalog, Bisaya, science, chemistry, physics, biology, technology, gunpowder, sulfur, potassium nitrate, porcelain, elements, compound, equation, experiment, laboratory, hypothesis, reaction, acid, base, molecule, porcelain glass, potash, saltpeter.",
-    "HISTORY_SOCIAL": "English, Tagalog, Bisaya, history, historical antecedents, civilization, Egypt, Mesopotamia, China, revolution, government, culture, society, artifact, ancient, renaissance, empire, pottery, dynasty, period, shadoof, papyrus, cuneiform, hieroglyphics.",
-    "MATH_ENGINEERING": "English, Tagalog, Bisaya, mathematics, calculus, algebra, geometry, engineering, formula, theorem, derivative, integral, computation, matrix, variable, function, graph, vector, equation.",
-    "BUSINESS_LAW": "English, Tagalog, Bisaya, business, economics, accounting, finance, management, law, constitution, article, liability, asset, profit, market, contract, jurisprudence."
-}
-
-# Default Vocabulary hint
-VOCAB_PROMPT = SUBJECT_PROMPTS["GENERAL"]
+# Vocabulary hint: English first, then Tagalog/Bisaya for mixed-language Philippine lectures
+VOCAB_PROMPT = "English, Tagalog, Bisaya, Cebuano, Filipino."
 
 @app.get("/")
 async def root():
@@ -73,10 +64,6 @@ async def transcribe(request: Request):
             raise HTTPException(status_code=400, detail="No audio data provided")
             
         start_time = time.time()
-        
-        # Determine subject prompt from headers
-        prompt_header = request.headers.get("x-initial-prompt") or request.headers.get("x-subject-preset")
-        active_prompt = prompt_header if prompt_header and len(prompt_header) > 20 else SUBJECT_PROMPTS.get(prompt_header, VOCAB_PROMPT)
         
         # 1. Fast RMS Energy Gate: Instantly skip pure silence / background microphone hiss (<1ms check)
         if len(audio_bytes) > 44:
@@ -97,11 +84,12 @@ async def transcribe(request: Request):
                 best_of=5,
                 temperature=0.0,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
-                condition_on_previous_text=True,
-                compression_ratio_threshold=2.4,
+                vad_parameters=dict(min_silence_duration_ms=1000, speech_pad_ms=150),
+                condition_on_previous_text=True, # Allow context to form full sentences
+                repetition_penalty=1.2, # Penalizes token repetition loops
+                compression_ratio_threshold=2.4, # Drops repetitive hallucinations
                 no_speech_threshold=0.6,
-                initial_prompt=active_prompt
+                initial_prompt=VOCAB_PROMPT
             )
             
             valid_texts = []
@@ -134,24 +122,19 @@ async def transcribe(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/transcribe_file")
-async def transcribe_file(
-    file: UploadFile = File(...),
-    subject_preset: Optional[str] = Form(None),
-    initial_prompt: Optional[str] = Form(None)
-):
+async def transcribe_file(file: UploadFile = File(...)):
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "processing", "progress": 0, "text": None, "error": None}
     
     # Save uploaded file to memory
     content = await file.read()
-    active_prompt = initial_prompt or SUBJECT_PROMPTS.get(subject_preset, VOCAB_PROMPT)
-    print(f"\n📥 Received audio file upload: {file.filename} ({len(content) / (1024*1024):.2f} MB) | Preset: {subject_preset or 'GENERAL'}")
+    print(f"\n📥 Received audio file upload: {file.filename} ({len(content) / (1024*1024):.2f} MB)")
     
     # Spawn background task
-    asyncio.create_task(process_job(job_id, content, active_prompt))
+    asyncio.create_task(process_job(job_id, content))
     return JSONResponse({"job_id": job_id})
 
-async def process_job(job_id: str, content: bytes, active_prompt: str = VOCAB_PROMPT):
+async def process_job(job_id: str, content: bytes):
     tmp_in_path = None
     tmp_out_path = None
     try:
@@ -178,12 +161,12 @@ async def process_job(job_id: str, content: bytes, active_prompt: str = VOCAB_PR
             ]
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            # Get total duration
+            # Get audio duration to calculate total progress
             cmd_probe = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", tmp_in_path]
             probe_out = subprocess.run(cmd_probe, stdout=subprocess.PIPE, text=True).stdout
             total_duration = float(probe_out.strip()) if probe_out.strip() else 0.0
+            
             print(f"⏱️ Total Audio Duration: {total_duration:.1f}s")
-            print(f"📚 Subject Bias: {active_prompt[:60]}...")
             print("--------------------------------------------------")
             
 
@@ -216,7 +199,7 @@ async def process_job(job_id: str, content: bytes, active_prompt: str = VOCAB_PR
                     condition_on_previous_text=True,
                     compression_ratio_threshold=2.4,
                     no_speech_threshold=0.6,
-                    initial_prompt=active_prompt
+                    initial_prompt=VOCAB_PROMPT
                 )
                 
                 chunk_results = []
