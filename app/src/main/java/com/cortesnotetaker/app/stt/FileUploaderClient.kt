@@ -43,7 +43,7 @@ class FileUploaderClient(private val context: Context) {
     }
 
     private val uploadClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
+        .connectTimeout(2, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(600, TimeUnit.SECONDS)
         .addInterceptor(tunnelInterceptor)
