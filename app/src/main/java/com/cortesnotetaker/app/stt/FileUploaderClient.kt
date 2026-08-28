@@ -35,20 +35,30 @@ class FileUploaderClient(private val context: Context) {
     private val localServerUrl = com.cortesnotetaker.app.BuildConfig.LOCAL_SERVER_URL
     
     // Upload client needs longer timeouts for massive files
+    private val tunnelInterceptor = okhttp3.Interceptor { chain ->
+        val request = chain.request().newBuilder()
+            .addHeader("Bypass-Tunnel-Reminder", "true")
+            .build()
+        chain.proceed(request)
+    }
+
     private val uploadClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(600, TimeUnit.SECONDS)
+        .addInterceptor(tunnelInterceptor)
         .build()
 
     // Poll client is fast
     private val pollClient = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
+        .addInterceptor(tunnelInterceptor)
         .build()
 
     private fun getCandidateBaseUrls(): List<String> {
         val rawCandidates = listOf(
+            "https://cortes-notetaker.loca.lt/transcribe",
             localServerUrl,
             "http://192.168.1.4:8000/transcribe",
             "http://10.218.142.107:8000/transcribe",
