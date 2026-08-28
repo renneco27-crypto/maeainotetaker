@@ -11,7 +11,17 @@ from faster_whisper import WhisperModel
 from phonetic_corrector import corrector
 
 
+import re
 from collections import deque
+
+def is_valid_philippine_latin(text: str) -> bool:
+    """Ensures only English, Tagalog, and Bisaya Latin-based speech is accepted. Discards Korean, Chinese, Japanese, Arabic, Cyrillic hallucinations."""
+    if not text or not text.strip():
+        return False
+    # Check for East Asian, Arabic, Cyrillic, and other non-Latin scripts
+    if re.search(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af\u0600-\u06ff\u0400-\u04ff]', text):
+        return False
+    return True
 
 app = FastAPI(title="Local PC Whisper Server")
 
@@ -69,6 +79,7 @@ async def transcribe(request: Request):
             segments, info = model.transcribe(
                 audio_io, 
                 task="transcribe",
+                language="en",
                 beam_size=5,
                 best_of=5,
                 temperature=0.0,
@@ -84,6 +95,9 @@ async def transcribe(request: Request):
             valid_texts = []
             for segment in segments:
                 if segment.compression_ratio > 2.4:
+                    continue
+
+                if not is_valid_philippine_latin(segment.text):
                     continue
                     
                 # Just apply basic phonetic dictionary, do NOT suppress or drop words
@@ -176,6 +190,7 @@ async def process_job(job_id: str, content: bytes):
                 segments_gen, _ = model.transcribe(
                     chunk_path, 
                     task="transcribe",
+                    language="en",
                     beam_size=5,
                     best_of=5,
                     temperature=0.0,
@@ -198,6 +213,9 @@ async def process_job(job_id: str, content: bytes):
                     orig_end_s = segment.end + offset_s
                     
                     if segment.compression_ratio > 2.4:
+                        continue
+                        
+                    if not is_valid_philippine_latin(segment.text):
                         continue
                         
                     text_clean = corrector.correct_text(segment.text.strip())
