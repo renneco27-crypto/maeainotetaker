@@ -178,7 +178,6 @@ async def process_job(job_id: str, content: bytes):
                     vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=2000, speech_pad_ms=200),
                     condition_on_previous_text=True,
-                    repetition_penalty=1.2,
                     compression_ratio_threshold=2.4,
                     no_speech_threshold=0.6,
                     initial_prompt=VOCAB_PROMPT
