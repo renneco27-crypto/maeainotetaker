@@ -15,6 +15,7 @@ enum class TranscriptionMode { AUTO, HOTSPOT_ONLY, CLOUD_ONLY }
 
 object AppSettings {
     var mode = TranscriptionMode.AUTO
+    var customTunnelUrl = ""
 }
 
 class NetworkWhisperClient {
@@ -32,11 +33,19 @@ class NetworkWhisperClient {
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
         
+    private val tunnelInterceptor = okhttp3.Interceptor { chain ->
+        val request = chain.request().newBuilder()
+            .addHeader("Bypass-Tunnel-Reminder", "true")
+            .build()
+        chain.proceed(request)
+    }
+
     // Fast connect client for Local PC, but very long read timeout since CPU inference can take 60+ seconds
     private val localClient = OkHttpClient.Builder()
         .connectTimeout(3, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .writeTimeout(120, TimeUnit.SECONDS)
+        .addInterceptor(tunnelInterceptor)
         .build()
 
     fun transcribe(pcmData: ShortArray): WhisperResult? {
@@ -44,15 +53,21 @@ class NetworkWhisperClient {
         
         // 1. Try Local PC Server if configured and mode allows it
         if (AppSettings.mode != TranscriptionMode.CLOUD_ONLY) {
-            val candidateUrls = listOf(
+            val candidateUrls = mutableListOf(
                 localServerUrl,
                 "http://192.168.1.4:8000/transcribe",
                 "http://10.218.142.107:8000/transcribe",
                 "http://192.168.137.1:8000/transcribe",
-                "http://192.168.43.1:8000/transcribe"
-            ).filter { it.isNotBlank() }.distinct()
+                "http://192.168.43.1:8000/transcribe",
+                "https://cortes-notetaker.loca.lt/transcribe"
+            )
+            if (AppSettings.customTunnelUrl.isNotBlank()) {
+                val url = AppSettings.customTunnelUrl
+                candidateUrls.add(if (url.endsWith("/transcribe")) url else "$url/transcribe")
+            }
+            val finalCandidateUrls = candidateUrls.filter { it.isNotBlank() }.distinct()
 
-            for (serverUrl in candidateUrls) {
+            for (serverUrl in finalCandidateUrls) {
                 try {
                     Log.d("NetworkWhisper", "Attempting local PC server at: $serverUrl")
                     val request = Request.Builder()

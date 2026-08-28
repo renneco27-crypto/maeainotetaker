@@ -62,6 +62,33 @@ fun NoteListScreen(
     val notes by viewModel.notes.collectAsStateWithLifecycle()
     var showSearch by remember { mutableStateOf(false) }
     var searchText by remember { mutableStateOf("") }
+    var showUrlDialog by remember { mutableStateOf(false) }
+    var urlInput by remember { mutableStateOf(com.cortesnotetaker.app.stt.AppSettings.customTunnelUrl) }
+
+    if (showUrlDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showUrlDialog = false },
+            title = { Text("Custom Tunnel URL") },
+            text = {
+                OutlinedTextField(
+                    value = urlInput,
+                    onValueChange = { urlInput = it },
+                    label = { Text("e.g., https://abc.loca.lt") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    com.cortesnotetaker.app.stt.AppSettings.customTunnelUrl = urlInput
+                    showUrlDialog = false
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showUrlDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -149,6 +176,14 @@ fun NoteListScreen(
                                         com.cortesnotetaker.app.stt.AppSettings.mode = com.cortesnotetaker.app.stt.TranscriptionMode.CLOUD_ONLY
                                         currentMode = com.cortesnotetaker.app.stt.TranscriptionMode.CLOUD_ONLY
                                         showMenu = false
+                                    }
+                                )
+                                androidx.compose.material3.Divider()
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Set Custom Tunnel URL") },
+                                    onClick = {
+                                        showMenu = false
+                                        showUrlDialog = true
                                     }
                                 )
                             }
